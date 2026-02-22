@@ -4,6 +4,7 @@ import {
   ActivityIndicator,
   Animated,
   FlatList,
+  BackHandler,
   Image,
   Platform,
   StatusBar,
@@ -31,6 +32,12 @@ const theme = {
   black: '#000',
   white: '#FFF',
   splash: '#004aad',
+};
+
+const AVAILABLE_MODES = {
+  web: 'Web',
+  mobile: 'Mobile',
+  tvbox: 'TV Box',
 };
 
 const INITIAL_CATEGORIES = ['Esportes', 'Todos', ...new Set(INITIAL_CHANNELS.map(c => c.category).filter(c => c !== 'Esportes'))];
@@ -116,6 +123,11 @@ export default function App() {
   const [isVideoLoading, setIsVideoLoading] = useState(true);
   const [isSidebarVisible, setIsSidebarVisible] = useState(true);
 
+  const [interfaceMode, setInterfaceMode] = useState(
+    isTV ? 'tvbox' : Platform.OS === 'web' ? 'web' : 'mobile'
+  );
+  const [isSettingsMenuVisible, setIsSettingsMenuVisible] = useState(false);
+
   const currentChannel = channels[playingIndex];
 
   // ==========================================
@@ -185,6 +197,28 @@ export default function App() {
     setIsSidebarVisible(p => !p);
   }, []);
 
+  // Hook para controlar a visibilidade da sidebar com o botão "Voltar" na TV
+  useEffect(() => {
+    if (!isTV) return;
+
+    const backAction = () => {
+      if (isSidebarVisible) {
+        // Se a sidebar estiver visível, o botão "voltar" a esconderá.
+        toggleSidebar();
+        return true; // Previne o comportamento padrão (fechar o app).
+      }
+      // Se a sidebar estiver oculta, o botão "voltar" funcionará normalmente (fechará o app).
+      return false;
+    };
+
+    const backHandler = BackHandler.addEventListener(
+      'hardwareBackPress',
+      backAction
+    );
+
+    return () => backHandler.remove();
+  }, [isSidebarVisible, toggleSidebar]);
+
   // Hook para controle via teclado
   useKeyboardControls({
     changeChannel: changePlayingChannel,
@@ -236,6 +270,32 @@ export default function App() {
     );
   }
 
+  const renderSettingsMenu = () => (
+    <View style={styles.settingsOverlay}>
+      <View style={styles.settingsMenu}>
+        <Text style={styles.settingsTitle}>Modo de Interface</Text>
+        {Object.entries(AVAILABLE_MODES).map(([key, name]) => (
+          <TouchableOpacity
+            key={key}
+            style={[
+              styles.settingsItem,
+              interfaceMode === key && styles.settingsItemActive,
+            ]}
+            onPress={() => {
+              setInterfaceMode(key);
+              setIsSettingsMenuVisible(false);
+            }}
+          >
+            <Text style={styles.settingsItemText}>{name}</Text>
+          </TouchableOpacity>
+        ))}
+        <TouchableOpacity style={styles.settingsCloseButton} onPress={() => setIsSettingsMenuVisible(false)}>
+          <Text style={styles.settingsCloseButtonText}>Fechar</Text>
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+
   const renderVideoPlayer = () => {
     if (currentChannel && isPlaying) {
       const loadingOverlay = isVideoLoading && (
@@ -245,34 +305,53 @@ export default function App() {
         </View>
       );
 
-      if (isTV) {
+      if (Platform.OS === 'web') {
         return (
-          <View style={{flex: 1, width: '100%'}}>
+          <>
             {loadingOverlay}
-            <WebView
-              source={{ uri: currentChannel.stream }}
-              style={{ flex: 1, opacity: isVideoLoading ? 0 : 1, backgroundColor: theme.background }}
-              onLoadEnd={() => setIsVideoLoading(false)}
-              onError={() => setIsVideoLoading(false)}
-              allowsInlineMediaPlayback={true}
-              mediaPlaybackRequiresUserAction={false} // Tenta habilitar o autoplay
+            <iframe
+              key={currentChannel.id} // Força a recriação do iframe na troca de canal
+              src={`${currentChannel.stream}?autoplay=1`}
+              style={{ width: '100%', height: '100%', border: 'none', opacity: isVideoLoading ? 0 : 1 }}
+              allow="autoplay; fullscreen; encrypted-media"
+              onLoad={() => setIsVideoLoading(false)}
+              onError={() => setIsVideoLoading(false)} // Esconde o loading em caso de erro também
             />
-          </View>
+          </>
         );
       }
 
+      const injectedJavaScript = `
+        setTimeout(() => {
+          // Tenta dar play em qualquer elemento de vídeo que encontrar
+          const video = document.querySelector('video');
+          if (video) {
+            video.play().catch(() => {});
+          }
+          // Tenta clicar em botões de play comuns em sites de embed
+          const playButton = document.querySelector('.play-button') || document.querySelector('[class*="play"]') || document.querySelector('[aria-label*="Play"]');
+          if (playButton) {
+            playButton.click();
+          }
+        }, 500); // Aguarda um pouco para a página carregar seus próprios scripts
+        true; // Necessário para o injectedJavaScript funcionar de forma confiável
+      `;
+
       return (
-        <>
+        <View style={{flex: 1, width: '100%'}}>
           {loadingOverlay}
-          <iframe
-            key={currentChannel.id} // Força a recriação do iframe na troca de canal
-            src={`${currentChannel.stream}?autoplay=1`}
-            style={{ width: '100%', height: '100%', border: 'none', opacity: isVideoLoading ? 0 : 1 }}
-            allow="autoplay; fullscreen; encrypted-media"
-            onLoad={() => setIsVideoLoading(false)}
-            onError={() => setIsVideoLoading(false)} // Esconde o loading em caso de erro também
+          <WebView
+            source={{ uri: currentChannel.stream }}
+            style={{ flex: 1, opacity: isVideoLoading ? 0 : 1, backgroundColor: theme.background }}
+            onError={() => setIsVideoLoading(false)}
+            onLoadEnd={() => setIsVideoLoading(false)} // Esconde o loading quando a página termina de carregar
+            mediaPlaybackRequiresUserAction={false} // Tenta habilitar o autoplay
+            allowsInlineMediaPlayback={true} // Necessário para iOS
+            javaScriptEnabled={true} // Garante que o JavaScript esteja habilitado
+            domStorageEnabled={true} // Habilita o localStorage, útil para alguns players
+            injectedJavaScript={injectedJavaScript} // Injeta nosso script para dar o "play"
           />
-        </>
+        </View>
       );
     }
 
@@ -286,48 +365,105 @@ export default function App() {
     );
   };
 
+  const renderDesktopLayout = () => (
+    <View style={styles.mainLayout}>
+      {/* Barra Lateral */}
+      {isSidebarVisible && (
+        <View style={styles.sidebar}>
+          <View style={styles.sidebarHeader}>
+            <Image source={w3labsLogo} style={styles.logo} resizeMode="contain" />
+            <TouchableOpacity onPress={() => setIsSettingsMenuVisible(true)} style={styles.settingsButton}>
+              <Feather name="settings" size={22} color={theme.text} />
+            </TouchableOpacity>
+          </View>
+          <View style={styles.categoryHeader}>
+              <FlatList data={categories} horizontal showsHorizontalScrollIndicator={false} keyExtractor={item => item} renderItem={({ item, index }) => (
+                <CategoryButton
+                  item={item}
+                  isActive={activeCategory === item}
+                  onPress={setActiveCategory}
+                  isFocused={isTV && focusedCategoryIndex === index}
+                  onFocus={() => setFocusedCategoryIndex(index)}
+                />)} />
+          </View>
+          <FlatList ref={listRef} data={channels} keyExtractor={item => item.id} showsVerticalScrollIndicator={false} getItemLayout={getItemLayout}
+            renderItem={({ item, index }) => (
+              <ChannelCard
+                item={item}
+                isPlaying={playingIndex === index}
+                isFocused={isTV && focusedIndex === index}
+                onSelect={() => changePlayingChannel(index)}
+                onFocus={() => setFocusedIndex(index)}
+              />)}
+          />
+        </View>
+      )}
+
+      {/* Conteúdo Principal */}
+      <View style={styles.mainContent}>
+        {Platform.OS === 'web' && (
+          <TouchableOpacity onPress={toggleSidebar} style={styles.sidebarToggleButton}><Feather name={isSidebarVisible ? "chevron-left" : "menu"} size={22} color="#FFF" /></TouchableOpacity>
+        )}
+        <TouchableOpacity
+          style={styles.videoContainer}
+          activeOpacity={1.0} // Sem feedback visual de opacidade
+          onPress={() => {
+            if (isTV && !isSidebarVisible) {
+              toggleSidebar();
+            }
+          }}
+          focusable={isTV && !isSidebarVisible}
+        >{renderVideoPlayer()}</TouchableOpacity>
+      </View>
+    </View>
+  );
+
+  const renderMobileLayout = () => (
+    <View style={{ flex: 1 }}>
+      <View style={styles.mobileHeader}>
+        <Image source={w3labsLogo} style={styles.logo} resizeMode="contain" />
+        <TouchableOpacity onPress={() => setIsSettingsMenuVisible(true)} style={styles.settingsButton}>
+          <Feather name="settings" size={22} color={theme.text} />
+        </TouchableOpacity>
+      </View>
+      <View style={styles.mobileVideoContainer}>
+        {renderVideoPlayer()}
+      </View>
+      <View style={styles.categoryHeader}>
+        <FlatList data={categories} horizontal showsHorizontalScrollIndicator={false} keyExtractor={item => item} renderItem={({ item }) => (
+          <CategoryButton
+            item={item}
+            isActive={activeCategory === item}
+            onPress={setActiveCategory}
+            isFocused={false}
+            onFocus={() => {}}
+          />
+        )} />
+      </View>
+      <FlatList
+        ref={listRef}
+        data={channels}
+        keyExtractor={item => item.id}
+        showsVerticalScrollIndicator={false}
+        getItemLayout={getItemLayout}
+        renderItem={({ item, index }) => (
+          <ChannelCard
+            item={item}
+            isPlaying={playingIndex === index}
+            isFocused={false}
+            onSelect={() => changePlayingChannel(index)}
+            onFocus={() => {}}
+          />
+        )}
+      />
+    </View>
+  );
+
   return (
     <View style={styles.container}>
       <StatusBar hidden />
-      <View style={styles.mainLayout}>
-        {/* Barra Lateral */}
-        {isSidebarVisible && (
-          <View style={styles.sidebar}>
-            <View style={styles.sidebarHeader}>
-              <Image source={w3labsLogo} style={styles.logo} resizeMode="contain" />
-            </View>
-            <View style={styles.categoryHeader}>
-                <FlatList data={categories} horizontal showsHorizontalScrollIndicator={false} keyExtractor={item => item} renderItem={({ item }) => (
-                  <CategoryButton
-                    item={item}
-                    isActive={activeCategory === item}
-                    onPress={setActiveCategory}
-                    isFocused={isTV && focusedCategoryIndex === index}
-                    onFocus={() => setFocusedCategoryIndex(index)}
-                  />
-                )} />
-            </View>
-            <FlatList ref={listRef} data={channels} keyExtractor={item => item.id} showsVerticalScrollIndicator={false} getItemLayout={getItemLayout}
-              renderItem={({ item, index }) => (
-                <ChannelCard
-                  item={item}
-                  isPlaying={playingIndex === index}
-                  isFocused={isTV && focusedIndex === index}
-                  onSelect={() => changePlayingChannel(index)}
-                  onFocus={() => setFocusedIndex(index)}
-                />)}
-            />
-          </View>
-        )}
-
-        {/* Conteúdo Principal */}
-        <View style={styles.mainContent}>
-          {Platform.OS === 'web' && (
-            <TouchableOpacity onPress={toggleSidebar} style={styles.sidebarToggleButton}><Feather name={isSidebarVisible ? "chevron-left" : "menu"} size={22} color="#FFF" /></TouchableOpacity>
-          )}
-          <View style={styles.videoContainer}>{renderVideoPlayer()}</View>
-        </View>
-      </View>
+      {interfaceMode === 'mobile' ? renderMobileLayout() : renderDesktopLayout()}
+      {isSettingsMenuVisible && renderSettingsMenu()}
     </View>
   );
 }
@@ -353,8 +489,18 @@ const styles = StyleSheet.create({
 
   mainLayout: { flex: 1, flexDirection: 'row' },
   sidebar: { width: SIDEBAR_WIDTH, backgroundColor: theme.sidebar, borderRightWidth: 1, borderColor: theme.border, flexDirection: 'column' },
-  sidebarHeader: { padding: 20, borderBottomWidth: 1, borderColor: theme.border },
-  logo: { height: 40, width: 'auto' },
+  sidebarHeader: {
+    padding: 20,
+    borderBottomWidth: 1,
+    borderColor: theme.border,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  logo: { height: 40, width: 150 },
+  settingsButton: {
+    padding: 8,
+  },
   categoryHeader: { 
     paddingTop: 20,
     paddingBottom: 20, paddingHorizontal: 16, 
@@ -381,4 +527,72 @@ const styles = StyleSheet.create({
   sidebarToggleButton: { position: 'absolute', top: 20, left: 20, zIndex: 10, backgroundColor: 'rgba(0,0,0,0.5)', padding: 12, borderRadius: 30 },
   mainContent: { flex: 1, backgroundColor: theme.background, flexDirection: 'column' },
   videoContainer: { flex: 1, backgroundColor: theme.background, justifyContent: 'center', alignItems: 'center' },
+
+  // Estilos do Menu de Configurações
+  settingsOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.8)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 1000,
+  },
+  settingsMenu: {
+    backgroundColor: theme.sidebar,
+    borderRadius: 12,
+    padding: 20,
+    width: '80%',
+    maxWidth: 300,
+    borderWidth: 1,
+    borderColor: theme.border,
+  },
+  settingsTitle: {
+    color: theme.textActive,
+    fontSize: 20,
+    fontWeight: 'bold',
+    marginBottom: 20,
+    textAlign: 'center',
+  },
+  settingsItem: {
+    paddingVertical: 15,
+    paddingHorizontal: 20,
+    borderRadius: 8,
+    backgroundColor: theme.card,
+    marginBottom: 10,
+  },
+  settingsItemActive: {
+    backgroundColor: theme.primary,
+  },
+  settingsItemText: {
+    color: theme.textActive,
+    fontSize: 16,
+    fontWeight: '600',
+    textAlign: 'center',
+  },
+  settingsCloseButton: {
+    marginTop: 10,
+    paddingVertical: 12,
+  },
+  settingsCloseButtonText: {
+    color: theme.textMuted,
+    textAlign: 'center',
+    fontSize: 14,
+  },
+
+  // Estilos do Layout Mobile
+  mobileHeader: {
+    paddingHorizontal: 20,
+    paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight + 10 : 40,
+    paddingBottom: 10,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    borderBottomWidth: 1,
+    borderColor: theme.border,
+    backgroundColor: theme.sidebar,
+  },
+  mobileVideoContainer: {
+    width: '100%',
+    aspectRatio: 16 / 9,
+    backgroundColor: theme.black,
+  },
 });
