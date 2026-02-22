@@ -1,10 +1,9 @@
 import { Feather } from '@expo/vector-icons';
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Animated,
-  FlatList,
-  BackHandler,
+  FlatList, 
   Image,
   Platform,
   StatusBar,
@@ -19,62 +18,156 @@ import INITIAL_CHANNELS from './channels.json';
 const w3labsLogo = require('./assets/icon.png');
 
 const theme = {
-  primary: '#00FF66',
-  background: '#08080C',
-  sidebar: '#0C0C12',
-  card: 'rgba(255, 255, 255, 0.03)',
-  cardPlaying: 'rgba(0, 255, 102, 0.08)',
-  cardFocused: 'rgba(0, 255, 102, 0.2)',
-  text: 'rgba(255, 255, 255, 0.7)',
+  primary: '#00E676', // Verde mais suave e moderno
+  background: '#0A0A10', // Fundo um pouco mais azulado
+  sidebar: '#101018', // Sidebar um pouco mais clara que o fundo
+  card: 'rgba(255, 255, 255, 0.05)',
+  cardPlaying: 'rgba(0, 230, 118, 0.1)',
+  cardFocused: 'rgba(0, 230, 118, 0.2)',
+  text: 'rgba(255, 255, 255, 0.8)', // Textos principais mais claros
   textActive: '#FFFFFF',
-  textMuted: 'rgba(255, 255, 255, 0.4)',
-  border: 'rgba(255, 255, 255, 0.08)',
+  textMuted: 'rgba(255, 255, 255, 0.5)', // Textos secundários mais claros
+  border: 'rgba(255, 255, 255, 0.1)',
   black: '#000',
   white: '#FFF',
-  splash: '#004aad',
+  splash: '#08080C', // Splash screen com a cor de fundo do app
 };
 
-const AVAILABLE_MODES = {
-  web: 'Web',
-  mobile: 'Mobile',
-  tvbox: 'TV Box',
+const INITIAL_CATEGORIES = ['Todos', 'Esportes', 'Reality Show', 'Filmes e Séries', 'Canais Abertos', 'Variedades', 'Notícias', 'Infantil', 'Animação', 'Religioso'];
+
+const SIDEBAR_WIDTH = 320; // Largura da barra lateral ajustada
+
+const processChannels = (channelsToProcess) => {
+  const channelMap = new Map();
+  const categoryMap = {
+    'TV Aberta': 'Canais Abertos',
+    'Filmes': 'Filmes e Séries',
+    'Séries': 'Filmes e Séries',
+  };
+
+  channelsToProcess.forEach(channel => {
+    // BUGFIX: Normaliza nomes de canais inconsistentes para agrupamento correto
+    const normalizedName = channel.name.trim().toUpperCase().replace(/\s/g, '');
+    const normalizedCategory = categoryMap[channel.category] || channel.category;
+
+    if (!channelMap.has(normalizedName)) {
+      channelMap.set(normalizedName, {
+        id: channel.id,
+        uniqueId: normalizedName,
+        name: channel.name,
+        category: normalizedCategory,
+        logo: channel.logo || '',
+        streams: [channel.stream],
+      });
+    } else {
+      const existingChannel = channelMap.get(normalizedName);
+      existingChannel.streams.push(channel.stream);
+      if (!existingChannel.logo && channel.logo) {
+        existingChannel.logo = channel.logo;
+      }
+    }
+  });
+
+  return Array.from(channelMap.values());
 };
 
-const INITIAL_CATEGORIES = ['Esportes', 'Todos', ...new Set(INITIAL_CHANNELS.map(c => c.category).filter(c => c !== 'Esportes'))];
+// UI ENHANCEMENT: Gera iniciais para canais sem logo
+const getInitials = (name) => {
+  if (!name) return '';
+  const words = name.trim().split(' ');
+  if (words.length > 1 && words[1]) return (words[0][0] + words[1][0]).toUpperCase();
+  return name.substring(0, 2).toUpperCase();
+};
 
-const isTV = Platform.isTV;
+const PROCESSED_CHANNELS = processChannels(INITIAL_CHANNELS);
 
-const SIDEBAR_WIDTH = 360; // Largura da barra lateral
+// ==========================================
+// ⚡ CURSOR PERSONALIZADO (WEB)
+// ==========================================
+const CustomCursor = () => {
+  // Roda apenas na plataforma web
+  if (Platform.OS !== 'web') {
+    return null;
+  }
+
+  const [position, setPosition] = useState({ x: -100, y: -100 });
+
+  useEffect(() => {
+    const handleMouseMove = (e) => {
+      setPosition({ x: e.clientX, y: e.clientY });
+    };
+    
+    // Esconde o cursor customizado se o mouse sair da janela
+    const handleMouseOut = () => {
+        setPosition({ x: -100, y: -100 });
+    }
+
+    window.addEventListener('mousemove', handleMouseMove);
+    document.body.addEventListener('mouseout', handleMouseOut);
+
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      document.body.removeEventListener('mouseout', handleMouseOut);
+    };
+  }, []);
+
+  const cursorStyle = {
+    position: 'fixed',
+    left: 0,
+    top: 0,
+    transform: `translate(${position.x}px, ${position.y}px)`,
+    pointerEvents: 'none', // Garante que o cursor não intercepte cliques
+    zIndex: 9999, // Garante que o cursor esteja sempre na frente
+  };
+
+  return (
+      <View style={cursorStyle}>
+          <Feather name="navigation" size={24} color={theme.primary} style={{ transform: [{ rotate: '45deg' }] }} />
+      </View>
+  );
+};
 
 // ==========================================
 // ⚡ COMPONENTES OTIMIZADOS
 // ==========================================
-const CategoryButton = React.memo(({ item, isActive, isFocused, onPress, onFocus }) => (
-  <TouchableOpacity
-    style={[styles.catBtn, isActive && styles.catBtnActive, isFocused && styles.catBtnFocused]}
-    onPress={() => onPress(item)}
-    onFocus={onFocus}
-  >
-    <Text style={[styles.catText, (isActive || isFocused) && styles.catTextActive]}>{item}</Text>
-  </TouchableOpacity>
-));
-
-const ChannelCard = React.memo(({ item, isPlaying, isFocused, onSelect, onFocus }) => {
-  const isLogoUrl = item.logo.startsWith('http');
+const CategoryButton = React.memo(({ item, isActive, onPress, hasTVPreferredFocus }) => {
+  const [isFocused, setIsFocused] = useState(false);
   return (
     <TouchableOpacity
+      hasTVPreferredFocus={hasTVPreferredFocus}
+      isTVSelectable={true}
+      onFocus={() => setIsFocused(true)}
+      onBlur={() => setIsFocused(false)}
+      style={[styles.catBtn, isActive && styles.catBtnActive, isFocused && styles.catBtnFocused]}
+      onPress={() => onPress(item)}
+    >
+      <Text style={[styles.catText, isActive && styles.catTextActive]}>{item}</Text>
+    </TouchableOpacity>
+  );
+});
+
+const ChannelCard = React.memo(({ item, isPlaying, onSelect, index }) => {
+  const [isFocused, setIsFocused] = useState(false);
+  // BUGFIX: Checa se a logo é uma URL válida e não uma string vazia
+  const isLogoUrl = item.logo && item.logo.startsWith('http');
+  const initials = getInitials(item.name);
+
+  return (
+    <TouchableOpacity
+      isTVSelectable={true}
+      onFocus={() => setIsFocused(true)}
+      onBlur={() => setIsFocused(false)}
       style={[styles.channelCard, isPlaying && styles.cardPlaying, isFocused && styles.cardFocused]}
-      onPress={onSelect}
-      onFocus={onFocus}
+      onPress={() => onSelect(index)}
     >
       <View style={styles.cardLogoContainer}>
-        {isLogoUrl ? <Image source={{ uri: item.logo }} style={styles.cardLogoImage} resizeMode="contain" /> : <Text style={styles.cardLogoEmoji}>{item.logo}</Text>}
+        {isLogoUrl ? <Image source={{ uri: item.logo }} style={styles.cardLogoImage} resizeMode="contain" /> 
+                   : <Text style={styles.cardLogoInitials}>{initials}</Text>}
       </View>
       <View style={styles.cardTextContainer}>
-        <Text style={[styles.cardTitle, (isPlaying || isFocused) && styles.cardTitleActive]}>{item.name}</Text>
+        <Text style={[styles.cardTitle, isPlaying && styles.cardTitleActive]}>{item.name}</Text>
         <Text style={styles.cardCategory}>{item.category}</Text>
       </View>
-      {isPlaying && <Feather name="play-circle" size={24} color="#00FF66" />}
     </TouchableOpacity>
   );
 });
@@ -84,7 +177,10 @@ const ChannelCard = React.memo(({ item, isPlaying, isFocused, onSelect, onFocus 
 // ==========================================
 const useKeyboardControls = ({ changeChannel, togglePlayPause }) => {
   useEffect(() => {
-    if (Platform.OS !== 'web') return; // Executar apenas na web para não interferir com a navegação da TV
+    // BUGFIX: Adiciona listeners de teclado apenas na plataforma web para evitar crash em nativo.
+    if (Platform.OS !== 'web') {
+      return;
+    }
 
     const handleKeyDown = (e) => {
       // Previne o comportamento padrão do navegador para setas e espaço
@@ -106,29 +202,37 @@ const useKeyboardControls = ({ changeChannel, togglePlayPause }) => {
   }, [changeChannel, togglePlayPause]);
 };
 
+// OPTIMIZATION: Move static functions and constants outside the component to prevent recreation on every render.
+const getItemLayout = (data, index) => ({ length: 92, offset: 92 * index, index });
+const keyExtractor = item => item.uniqueId;
+
 export default function App() {
   const [isAppReady, setIsAppReady] = useState(false);
   const splashOpacity = useRef(new Animated.Value(1)).current;
   const splashPulse = useRef(new Animated.Value(1)).current;
   const listRef = useRef(null);
 
-  const [channels, setChannels] = useState(INITIAL_CHANNELS.filter(c => c.category === 'Esportes'));
   const [categories] = useState(INITIAL_CATEGORIES);
-  const [activeCategory, setActiveCategory] = useState('Esportes'); 
+  const [activeCategory, setActiveCategory] = useState('Todos'); 
   
   const [playingIndex, setPlayingIndex] = useState(0); 
-  const [focusedIndex, setFocusedIndex] = useState(0); // Para controle de foco na TV
-  const [focusedCategoryIndex, setFocusedCategoryIndex] = useState(0); // Foco da categoria na TV
-  const [isPlaying, setIsPlaying] = useState(false); // Inicia pausado. O autoplay é ativado após o splash ou na troca de categoria.
+  const [currentStreamIndex, setCurrentStreamIndex] = useState(0);
+  const [isPlaying, setIsPlaying] = useState(true); // Inicia pausado. O autoplay é ativado após o splash ou na troca de categoria.
   const [isVideoLoading, setIsVideoLoading] = useState(true);
   const [isSidebarVisible, setIsSidebarVisible] = useState(true);
+  const [isSidebarToggleFocused, setIsSidebarToggleFocused] = useState(false);
 
-  const [interfaceMode, setInterfaceMode] = useState(
-    isTV ? 'tvbox' : Platform.OS === 'web' ? 'web' : 'mobile'
-  );
-  const [isSettingsMenuVisible, setIsSettingsMenuVisible] = useState(false);
+  // OPTIMIZATION: Use useMemo to derive the channel list. This is more declarative than using useEffect to set state.
+  const channels = useMemo(() => {
+    if (activeCategory === 'Todos') {
+      return PROCESSED_CHANNELS;
+    }
+    // SIMPLIFICATION: Filter logic is simple due to pre-processing.
+    return PROCESSED_CHANNELS.filter(c => c.category === activeCategory);
+  }, [activeCategory]);
 
   const currentChannel = channels[playingIndex];
+  const currentStream = currentChannel?.streams[currentStreamIndex];
 
   // ==========================================
   // 🕹️ LÓGICA DE INICIALIZAÇÃO E MUDANÇA DE ESTADO
@@ -174,18 +278,33 @@ export default function App() {
     if (nextIdx < 0) nextIdx = channels.length - 1;
     
     setPlayingIndex(nextIdx);
+    setCurrentStreamIndex(0);
     setIsPlaying(true);
   }, [channels.length, playingIndex]);
 
-  const handlePlayAction = useCallback(() => {
-    setIsPlaying(true);
-  }, []);
+  const handleStreamError = useCallback(() => {
+    if (!currentChannel) return;
+
+    const nextStreamIndex = currentStreamIndex + 1;
+    if (nextStreamIndex < currentChannel.streams.length) {
+      console.log(`Stream failed for ${currentChannel.name}. Trying next server...`);
+      setIsVideoLoading(true);
+      setCurrentStreamIndex(nextStreamIndex);
+    } else {
+      console.log(`All streams for ${currentChannel.name} failed.`);
+      setIsVideoLoading(false);
+      setIsPlaying(false);
+    }
+  }, [currentChannel, currentStreamIndex]);
 
   const togglePlayPause = useCallback(() => {
     setIsPlaying(prev => !prev);
   }, []);
 
   const toggleFullScreen = useCallback(() => {
+    // BUGFIX: A API Fullscreen só existe na web.
+    if (Platform.OS !== 'web') return;
+
     if (!document.fullscreenElement) {
       document.documentElement.requestFullscreen().catch(err => console.log("Erro Fullscreen:", err));
     } else {
@@ -197,33 +316,17 @@ export default function App() {
     setIsSidebarVisible(p => !p);
   }, []);
 
-  // Hook para controlar a visibilidade da sidebar com o botão "Voltar" na TV
-  useEffect(() => {
-    if (!isTV) return;
-
-    const backAction = () => {
-      if (isSidebarVisible) {
-        // Se a sidebar estiver visível, o botão "voltar" a esconderá.
-        toggleSidebar();
-        return true; // Previne o comportamento padrão (fechar o app).
-      }
-      // Se a sidebar estiver oculta, o botão "voltar" funcionará normalmente (fechará o app).
-      return false;
-    };
-
-    const backHandler = BackHandler.addEventListener(
-      'hardwareBackPress',
-      backAction
-    );
-
-    return () => backHandler.remove();
-  }, [isSidebarVisible, toggleSidebar]);
-
   // Hook para controle via teclado
   useKeyboardControls({
     changeChannel: changePlayingChannel,
     togglePlayPause: togglePlayPause,
   });
+
+  // OPTIMIZATION: Create a stable onSelect function to prevent re-creating functions in renderItem,
+  // which helps the memoization of ChannelCard.
+  const handleSelectChannel = useCallback((index) => {
+    changePlayingChannel(index);
+  }, [changePlayingChannel]);
 
   // Efeito para rolar a FlatList para o canal que está tocando
   useEffect(() => {
@@ -236,26 +339,14 @@ export default function App() {
     }
   }, [playingIndex, isAppReady, channels.length]);
 
+  // This effect now only handles the side-effects of changing a category.
   useEffect(() => {
-    // Filtra os canais quando a categoria ativa muda
-    const newChannels = activeCategory === 'Todos'
-      ? INITIAL_CHANNELS
-      : INITIAL_CHANNELS.filter(c => c.category === activeCategory);
-    setChannels(newChannels);
-
     // Reseta o índice de reprodução para evitar crash ao mudar de categoria.
     // Isso garante que o app sempre aponte para um canal válido na nova lista.
     setPlayingIndex(0);
-    setFocusedIndex(0);
-    if (isTV) {
-      const newCategoryIndex = categories.indexOf(activeCategory);
-      setFocusedCategoryIndex(newCategoryIndex > -1 ? newCategoryIndex : 0);
-    }
-
+    setCurrentStreamIndex(0);
     if (isAppReady) setIsPlaying(true); // Ativa o autoplay ao trocar de categoria ou no load inicial
-  }, [activeCategory, isAppReady, categories]);
-
-  const getItemLayout = (data, index) => ({ length: 92, offset: 92 * index, index });
+  }, [activeCategory, isAppReady]);
 
   // 🎨 RENDERIZAÇÃO
   if (!isAppReady) {
@@ -270,32 +361,6 @@ export default function App() {
     );
   }
 
-  const renderSettingsMenu = () => (
-    <View style={styles.settingsOverlay}>
-      <View style={styles.settingsMenu}>
-        <Text style={styles.settingsTitle}>Modo de Interface</Text>
-        {Object.entries(AVAILABLE_MODES).map(([key, name]) => (
-          <TouchableOpacity
-            key={key}
-            style={[
-              styles.settingsItem,
-              interfaceMode === key && styles.settingsItemActive,
-            ]}
-            onPress={() => {
-              setInterfaceMode(key);
-              setIsSettingsMenuVisible(false);
-            }}
-          >
-            <Text style={styles.settingsItemText}>{name}</Text>
-          </TouchableOpacity>
-        ))}
-        <TouchableOpacity style={styles.settingsCloseButton} onPress={() => setIsSettingsMenuVisible(false)}>
-          <Text style={styles.settingsCloseButtonText}>Fechar</Text>
-        </TouchableOpacity>
-      </View>
-    </View>
-  );
-
   const renderVideoPlayer = () => {
     if (currentChannel && isPlaying) {
       const loadingOverlay = isVideoLoading && (
@@ -305,76 +370,47 @@ export default function App() {
         </View>
       );
 
-      if (Platform.OS === 'web') {
-        return (
-          <>
-            {loadingOverlay}
+      return (
+        <>
+          {loadingOverlay}
+          {/* BUGFIX: Renderiza o player de vídeo apropriado para cada plataforma */}
+          {Platform.OS === 'web' ? (
             <iframe
-              key={currentChannel.id} // Força a recriação do iframe na troca de canal
-              src={`${currentChannel.stream}?autoplay=1`}
+              key={`${currentChannel.uniqueId}-${currentStreamIndex}`}
+              src={`${currentStream}?autoplay=1`}
               style={{ width: '100%', height: '100%', border: 'none', opacity: isVideoLoading ? 0 : 1 }}
               allow="autoplay; fullscreen; encrypted-media"
               onLoad={() => setIsVideoLoading(false)}
-              onError={() => setIsVideoLoading(false)} // Esconde o loading em caso de erro também
+              onError={handleStreamError}
             />
-          </>
-        );
-      }
-
-      const injectedJavaScript = `
-        setTimeout(() => {
-          // Tenta dar play em qualquer elemento de vídeo que encontrar
-          const video = document.querySelector('video');
-          if (video) {
-            video.play().catch(() => {});
-          }
-          // Tenta clicar em botões de play comuns em sites de embed
-          const playButton = document.querySelector('.play-button') || document.querySelector('[class*="play"]') || document.querySelector('[aria-label*="Play"]');
-          if (playButton) {
-            playButton.click();
-          }
-        }, 500); // Aguarda um pouco para a página carregar seus próprios scripts
-        true; // Necessário para o injectedJavaScript funcionar de forma confiável
-      `;
-
-      return (
-        <View style={{flex: 1, width: '100%'}}>
-          {loadingOverlay}
-          <WebView
-            source={{ uri: currentChannel.stream }}
-            style={{ flex: 1, opacity: isVideoLoading ? 0 : 1, backgroundColor: theme.background }}
-            onError={() => setIsVideoLoading(false)}
-            onLoadEnd={() => setIsVideoLoading(false)} // Esconde o loading quando a página termina de carregar
-            mediaPlaybackRequiresUserAction={false} // Tenta habilitar o autoplay
-            allowsInlineMediaPlayback={true} // Necessário para iOS
-            javaScriptEnabled={true} // Garante que o JavaScript esteja habilitado
-            domStorageEnabled={true} // Habilita o localStorage, útil para alguns players
-            injectedJavaScript={injectedJavaScript} // Injeta nosso script para dar o "play"
-          />
-        </View>
+          ) : (
+            <WebView
+              key={`${currentChannel.uniqueId}-${currentStreamIndex}`}
+              source={{ uri: `${currentStream}?autoplay=1` }}
+              style={{ flex: 1, backgroundColor: theme.background, opacity: isVideoLoading ? 0 : 1 }}
+              onLoadEnd={() => setIsVideoLoading(false)}
+              onError={handleStreamError}
+              allowsInlineMediaPlayback={true}
+              mediaPlaybackRequiresUserAction={false}
+            />
+          )}
+        </>
       );
     }
 
-    return (
-      <View style={styles.pausedOverlay}>
-        <TouchableOpacity style={styles.giantPlayButton} activeOpacity={0.8} onPress={handlePlayAction}>
-          <Feather name="play" size={80} color="#000" style={{ marginLeft: 15 }} />
-        </TouchableOpacity>
-        <Text style={styles.pausedText}>Tocar {currentChannel?.name}</Text>
-      </View>
-    );
+    return null;
   };
 
-  const renderDesktopLayout = () => (
+  return (
+    <View style={styles.container}>
+      <CustomCursor />
+      <StatusBar hidden />
     <View style={styles.mainLayout}>
       {/* Barra Lateral */}
       {isSidebarVisible && (
         <View style={styles.sidebar}>
           <View style={styles.sidebarHeader}>
             <Image source={w3labsLogo} style={styles.logo} resizeMode="contain" />
-            <TouchableOpacity onPress={() => setIsSettingsMenuVisible(true)} style={styles.settingsButton}>
-              <Feather name="settings" size={22} color={theme.text} />
-            </TouchableOpacity>
           </View>
           <View style={styles.categoryHeader}>
               <FlatList data={categories} horizontal showsHorizontalScrollIndicator={false} keyExtractor={item => item} renderItem={({ item, index }) => (
@@ -382,88 +418,34 @@ export default function App() {
                   item={item}
                   isActive={activeCategory === item}
                   onPress={setActiveCategory}
-                  isFocused={isTV && focusedCategoryIndex === index}
-                  onFocus={() => setFocusedCategoryIndex(index)}
+                  hasTVPreferredFocus={index === 0 && isAppReady}
                 />)} />
           </View>
-          <FlatList ref={listRef} data={channels} keyExtractor={item => item.id} showsVerticalScrollIndicator={false} getItemLayout={getItemLayout}
+          <FlatList ref={listRef} data={channels} keyExtractor={keyExtractor} showsVerticalScrollIndicator={false} getItemLayout={getItemLayout}
             renderItem={({ item, index }) => (
               <ChannelCard
                 item={item}
-                isPlaying={playingIndex === index}
-                isFocused={isTV && focusedIndex === index}
-                onSelect={() => changePlayingChannel(index)}
-                onFocus={() => setFocusedIndex(index)}
+                isPlaying={playingIndex === index} 
+                onSelect={handleSelectChannel}
+                index={index}
               />)}
           />
         </View>
       )}
 
       {/* Conteúdo Principal */}
-      <View style={styles.mainContent}>
-        {Platform.OS === 'web' && (
-          <TouchableOpacity onPress={toggleSidebar} style={styles.sidebarToggleButton}><Feather name={isSidebarVisible ? "chevron-left" : "menu"} size={22} color="#FFF" /></TouchableOpacity>
-        )}
-        <TouchableOpacity
-          style={styles.videoContainer}
-          activeOpacity={1.0} // Sem feedback visual de opacidade
-          onPress={() => {
-            if (isTV && !isSidebarVisible) {
-              toggleSidebar();
-            }
-          }}
-          focusable={isTV && !isSidebarVisible}
-        >{renderVideoPlayer()}</TouchableOpacity>
+        <View style={styles.mainContent}>
+          <TouchableOpacity
+            onPress={toggleSidebar}
+            style={[styles.sidebarToggleButton, isSidebarToggleFocused && styles.sidebarToggleFocused]}
+            isTVSelectable={true}
+            onFocus={() => setIsSidebarToggleFocused(true)}
+            onBlur={() => setIsSidebarToggleFocused(false)}>
+            <Feather name={isSidebarVisible ? "chevron-left" : "menu"} size={22} color="#FFF" />
+          </TouchableOpacity>
+        <View style={styles.videoContainer}>{renderVideoPlayer()}</View>
       </View>
     </View>
-  );
-
-  const renderMobileLayout = () => (
-    <View style={{ flex: 1 }}>
-      <View style={styles.mobileHeader}>
-        <Image source={w3labsLogo} style={styles.logo} resizeMode="contain" />
-        <TouchableOpacity onPress={() => setIsSettingsMenuVisible(true)} style={styles.settingsButton}>
-          <Feather name="settings" size={22} color={theme.text} />
-        </TouchableOpacity>
-      </View>
-      <View style={styles.mobileVideoContainer}>
-        {renderVideoPlayer()}
-      </View>
-      <View style={styles.categoryHeader}>
-        <FlatList data={categories} horizontal showsHorizontalScrollIndicator={false} keyExtractor={item => item} renderItem={({ item }) => (
-          <CategoryButton
-            item={item}
-            isActive={activeCategory === item}
-            onPress={setActiveCategory}
-            isFocused={false}
-            onFocus={() => {}}
-          />
-        )} />
-      </View>
-      <FlatList
-        ref={listRef}
-        data={channels}
-        keyExtractor={item => item.id}
-        showsVerticalScrollIndicator={false}
-        getItemLayout={getItemLayout}
-        renderItem={({ item, index }) => (
-          <ChannelCard
-            item={item}
-            isPlaying={playingIndex === index}
-            isFocused={false}
-            onSelect={() => changePlayingChannel(index)}
-            onFocus={() => {}}
-          />
-        )}
-      />
-    </View>
-  );
-
-  return (
-    <View style={styles.container}>
-      <StatusBar hidden />
-      {interfaceMode === 'mobile' ? renderMobileLayout() : renderDesktopLayout()}
-      {isSettingsMenuVisible && renderSettingsMenu()}
     </View>
   );
 }
@@ -472,18 +454,18 @@ export default function App() {
 // 💅 ESTILOS UNIFICADOS PARA WEB E TV
 // ==========================================
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: theme.background },
+  container: { 
+    flex: 1, 
+    backgroundColor: theme.background,
+    ...Platform.select({
+      web: {
+        cursor: 'none', // Esconde o cursor padrão do sistema na web
+      }
+    })
+  },
   splashContainer: { ...StyleSheet.absoluteFillObject, backgroundColor: theme.splash, justifyContent: 'center', alignItems: 'center', zIndex: 999 },
   splashLogo: { width: 250, height: 250 },
-  
-  pausedOverlay: { ...StyleSheet.absoluteFillObject, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.8)', zIndex: 5 },
-  giantPlayButton: {
-    width: 140, height: 140, borderRadius: 70, backgroundColor: theme.primary,
-    justifyContent: 'center', alignItems: 'center', marginBottom: 24,
-    ...Platform.select({ web: { boxShadow: `0px 8px 45px ${theme.primary}99` } })
-  },
-  pausedText: { color: theme.textActive, fontSize: 28, fontWeight: '900', letterSpacing: 1 },
-  
+
   videoLoadingOverlay: { ...StyleSheet.absoluteFillObject, zIndex: 6, backgroundColor: 'rgba(0,0,0,0.9)', justifyContent: 'center', alignItems: 'center' },
   videoLoadingText: { color: theme.text, marginTop: 16, fontSize: 16 },
 
@@ -498,9 +480,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   logo: { height: 40, width: 150 },
-  settingsButton: {
-    padding: 8,
-  },
   categoryHeader: { 
     paddingTop: 20,
     paddingBottom: 20, paddingHorizontal: 16, 
@@ -508,91 +487,27 @@ const styles = StyleSheet.create({
   },
   catBtn: { paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.1)', marginRight: 10, borderWidth: 2, borderColor: 'transparent' },
   catBtnActive: { backgroundColor: theme.primary },
-  catBtnFocused: { transform: [{ scale: 1.1 }], borderColor: theme.primary },
-  catText: { color: theme.text, fontWeight: 'bold' },
-  catTextActive: { color: theme.black, fontWeight: '900' },
+  catBtnFocused: { transform: [{ scale: 1.1 }], borderColor: theme.primary }, // Mantido para possível uso futuro com foco de teclado
+  catText: { color: theme.text, fontWeight: '600' },
+  catTextActive: { color: theme.black, fontWeight: 'bold' },
   
-  channelCard: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, height: 80, marginHorizontal: 16, marginTop: 12, borderRadius: 12, backgroundColor: theme.card, borderWidth: 1, borderColor: 'transparent' },
-  cardPlaying: { backgroundColor: theme.cardPlaying, borderColor: theme.primary, ...Platform.select({ web: { boxShadow: `0 0 20px ${theme.primary}40` } }) },
-  cardFocused: { backgroundColor: theme.cardFocused, borderColor: theme.primary, transform: [{ scale: 1.05 }] },
-  cardLogoContainer: { width: 50, height: 50, backgroundColor: 'rgba(255,255,255,0.05)', borderRadius: 25, justifyContent: 'center', alignItems: 'center', marginRight: 16, overflow: 'hidden', padding: 4 },
+  channelCard: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, height: 80, marginHorizontal: 16, marginTop: 12, borderRadius: 12, backgroundColor: theme.card, borderWidth: 1, borderColor: 'transparent', ...Platform.select({ web: { transition: 'all 0.2s ease-in-out' } }) },
+  cardPlaying: { backgroundColor: theme.cardPlaying, borderColor: theme.primary, ...Platform.select({ web: { boxShadow: `0 0 25px ${theme.primary}50` } }) },
+  cardFocused: { backgroundColor: theme.cardFocused, borderColor: theme.primary, transform: [{ scale: 1.05 }] }, // Mantido para possível uso futuro com foco de teclado
+  cardLogoContainer: { width: 50, height: 50, backgroundColor: 'rgba(255,255,255,0.05)', borderRadius: 12, justifyContent: 'center', alignItems: 'center', marginRight: 16, overflow: 'hidden' },
   cardLogoImage: { width: '100%', height: '100%' },
-  cardLogoEmoji: { fontSize: 24 },
+  cardLogoInitials: { fontSize: 18, fontWeight: 'bold', color: theme.text },
   cardTextContainer: { flex: 1 },
   cardTitle: { color: theme.text, fontSize: 18, fontWeight: '600' },
   cardTitleActive: { color: theme.textActive, fontWeight: 'bold' },
   cardCategory: { color: theme.textMuted, fontSize: 12, marginTop: 4, textTransform: 'uppercase' },
 
   // Estilos específicos da plataforma
-  sidebarToggleButton: { position: 'absolute', top: 20, left: 20, zIndex: 10, backgroundColor: 'rgba(0,0,0,0.5)', padding: 12, borderRadius: 30 },
+  sidebarToggleButton: { position: 'absolute', top: 20, left: 20, zIndex: 10, backgroundColor: 'rgba(0,0,0,0.4)', padding: 12, borderRadius: 30 },
+  sidebarToggleFocused: {
+    backgroundColor: 'rgba(0, 230, 118, 0.3)',
+    transform: [{ scale: 1.1 }],
+  },
   mainContent: { flex: 1, backgroundColor: theme.background, flexDirection: 'column' },
-  videoContainer: { flex: 1, backgroundColor: theme.background, justifyContent: 'center', alignItems: 'center' },
-
-  // Estilos do Menu de Configurações
-  settingsOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0,0,0,0.8)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    zIndex: 1000,
-  },
-  settingsMenu: {
-    backgroundColor: theme.sidebar,
-    borderRadius: 12,
-    padding: 20,
-    width: '80%',
-    maxWidth: 300,
-    borderWidth: 1,
-    borderColor: theme.border,
-  },
-  settingsTitle: {
-    color: theme.textActive,
-    fontSize: 20,
-    fontWeight: 'bold',
-    marginBottom: 20,
-    textAlign: 'center',
-  },
-  settingsItem: {
-    paddingVertical: 15,
-    paddingHorizontal: 20,
-    borderRadius: 8,
-    backgroundColor: theme.card,
-    marginBottom: 10,
-  },
-  settingsItemActive: {
-    backgroundColor: theme.primary,
-  },
-  settingsItemText: {
-    color: theme.textActive,
-    fontSize: 16,
-    fontWeight: '600',
-    textAlign: 'center',
-  },
-  settingsCloseButton: {
-    marginTop: 10,
-    paddingVertical: 12,
-  },
-  settingsCloseButtonText: {
-    color: theme.textMuted,
-    textAlign: 'center',
-    fontSize: 14,
-  },
-
-  // Estilos do Layout Mobile
-  mobileHeader: {
-    paddingHorizontal: 20,
-    paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight + 10 : 40,
-    paddingBottom: 10,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    borderBottomWidth: 1,
-    borderColor: theme.border,
-    backgroundColor: theme.sidebar,
-  },
-  mobileVideoContainer: {
-    width: '100%',
-    aspectRatio: 16 / 9,
-    backgroundColor: theme.black,
-  },
+  videoContainer: { flex: 1, backgroundColor: theme.background },
 });
