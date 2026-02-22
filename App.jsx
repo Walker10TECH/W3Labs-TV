@@ -5,22 +5,17 @@ import {
   Animated,
   FlatList,
   Image,
-  LayoutAnimation,
   Platform,
   StatusBar,
   StyleSheet,
   Text,
   TouchableOpacity,
-  UIManager,
   View
 } from 'react-native';
+import { WebView } from 'react-native-webview';
 import INITIAL_CHANNELS from './channels.json';
 
 const w3labsLogo = require('./assets/icon.png');
-
-if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
-  UIManager.setLayoutAnimationEnabledExperimental(true);
-}
 
 const theme = {
   primary: '#00FF66',
@@ -40,10 +35,9 @@ const theme = {
 
 const INITIAL_CATEGORIES = ['Esportes', 'Todos', ...new Set(INITIAL_CHANNELS.map(c => c.category).filter(c => c !== 'Esportes'))];
 
-const isWeb = Platform.OS === 'web';
 const isTV = Platform.isTV;
 
-const SIDEBAR_WIDTH = isTV ? 420 : 360; // Largura da barra lateral para TV e Web
+const SIDEBAR_WIDTH = 360; // Largura da barra lateral
 
 // ==========================================
 // ⚡ COMPONENTES OTIMIZADOS
@@ -81,9 +75,9 @@ const ChannelCard = React.memo(({ item, isPlaying, isFocused, onSelect, onFocus 
 // ==========================================
 // ⚡ HOOKS PERSONALIZADOS
 // ==========================================
-const useKeyboardControls = (isEnabled, { changeChannel, togglePlayPause }) => {
+const useKeyboardControls = ({ changeChannel, togglePlayPause }) => {
   useEffect(() => {
-    if (!isEnabled) return;
+    if (Platform.OS !== 'web') return; // Executar apenas na web para não interferir com a navegação da TV
 
     const handleKeyDown = (e) => {
       // Previne o comportamento padrão do navegador para setas e espaço
@@ -102,7 +96,7 @@ const useKeyboardControls = (isEnabled, { changeChannel, togglePlayPause }) => {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isEnabled, changeChannel, togglePlayPause]);
+  }, [changeChannel, togglePlayPause]);
 };
 
 export default function App() {
@@ -118,9 +112,8 @@ export default function App() {
   const [playingIndex, setPlayingIndex] = useState(0); 
   const [focusedIndex, setFocusedIndex] = useState(0); // Para controle de foco na TV
   const [focusedCategoryIndex, setFocusedCategoryIndex] = useState(0); // Foco da categoria na TV
-  const [isPlaying, setIsPlaying] = useState(false); // CORREÇÃO: Inicia pausado. O autoplay é ativado após o splash ou na troca de categoria.
+  const [isPlaying, setIsPlaying] = useState(false); // Inicia pausado. O autoplay é ativado após o splash ou na troca de categoria.
   const [isVideoLoading, setIsVideoLoading] = useState(true);
-  const [webShowCategories, setWebShowCategories] = useState(true);
   const [isSidebarVisible, setIsSidebarVisible] = useState(true);
 
   const currentChannel = channels[playingIndex];
@@ -132,8 +125,8 @@ export default function App() {
     // Animação de pulsação para o logo na splash screen
     const pulseAnimation = Animated.loop(
       Animated.sequence([
-        Animated.timing(splashPulse, { toValue: 1.05, duration: 800, useNativeDriver: !isWeb }),
-        Animated.timing(splashPulse, { toValue: 1, duration: 800, useNativeDriver: !isWeb }),
+        Animated.timing(splashPulse, { toValue: 1.05, duration: 800, useNativeDriver: false }),
+        Animated.timing(splashPulse, { toValue: 1, duration: 800, useNativeDriver: false }),
       ])
     );
     pulseAnimation.start();
@@ -141,7 +134,7 @@ export default function App() {
     // Controla a exibição da tela de splash
     const splashTimer = setTimeout(() => {
       pulseAnimation.stop();
-      Animated.timing(splashOpacity, { toValue: 0, duration: 1000, useNativeDriver: !isWeb })
+      Animated.timing(splashOpacity, { toValue: 0, duration: 1000, useNativeDriver: false })
       .start(() => setIsAppReady(true));
     }, 3000); 
 
@@ -181,7 +174,6 @@ export default function App() {
   }, []);
 
   const toggleFullScreen = useCallback(() => {
-    if (!isWeb) return;
     if (!document.fullscreenElement) {
       document.documentElement.requestFullscreen().catch(err => console.log("Erro Fullscreen:", err));
     } else {
@@ -190,18 +182,11 @@ export default function App() {
   }, []);
 
   const toggleSidebar = useCallback(() => {
-    if (isWeb) setIsSidebarVisible(p => !p);
+    setIsSidebarVisible(p => !p);
   }, []);
 
-  const toggleWebCategories = useCallback(() => {
-    if (isWeb) {
-      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-      setWebShowCategories(p => !p);
-    }
-  }, []);
-
-  // Hook para controle via teclado na web
-  useKeyboardControls(isWeb, {
+  // Hook para controle via teclado
+  useKeyboardControls({
     changeChannel: changePlayingChannel,
     togglePlayPause: togglePlayPause,
   });
@@ -224,7 +209,7 @@ export default function App() {
       : INITIAL_CHANNELS.filter(c => c.category === activeCategory);
     setChannels(newChannels);
 
-    // BUGFIX: Reseta os índices de reprodução e foco para evitar crash ao mudar de categoria.
+    // Reseta o índice de reprodução para evitar crash ao mudar de categoria.
     // Isso garante que o app sempre aponte para um canal válido na nova lista.
     setPlayingIndex(0);
     setFocusedIndex(0);
@@ -253,32 +238,41 @@ export default function App() {
 
   const renderVideoPlayer = () => {
     if (currentChannel && isPlaying) {
-      if (isWeb) {
+      const loadingOverlay = isVideoLoading && (
+        <View style={styles.videoLoadingOverlay}>
+          <ActivityIndicator size="large" color="#00FF66" />
+          <Text style={styles.videoLoadingText}>Carregando canal...</Text>
+        </View>
+      );
+
+      if (isTV) {
         return (
-          <>
-            {isVideoLoading && (
-              <View style={styles.videoLoadingOverlay}>
-                <ActivityIndicator size="large" color="#00FF66" />
-                <Text style={styles.videoLoadingText}>Carregando canal...</Text>
-              </View>
-            )}
-            <iframe
-              src={`${currentChannel.stream}?autoplay=1`}
-              style={{ width: '100%', height: '100%', border: 'none', opacity: isVideoLoading ? 0 : 1 }}
-              allow="autoplay; fullscreen; encrypted-media"
-              onLoad={() => setIsVideoLoading(false)}
+          <View style={{flex: 1, width: '100%'}}>
+            {loadingOverlay}
+            <WebView
+              source={{ uri: currentChannel.stream }}
+              style={{ flex: 1, opacity: isVideoLoading ? 0 : 1, backgroundColor: theme.background }}
+              onLoadEnd={() => setIsVideoLoading(false)}
+              onError={() => setIsVideoLoading(false)}
+              allowsInlineMediaPlayback={true}
+              mediaPlaybackRequiresUserAction={false} // Tenta habilitar o autoplay
             />
-          </>
+          </View>
         );
       }
-      // Para TV, um player nativo é necessário. Usando um placeholder aprimorado.
+
       return (
-        <View style={styles.tvPlayerPlaceholder}>
-          <Feather name="tv" size={80} color={theme.textMuted} />
-          <Text style={styles.tvPlayerPlaceholderText}>Player de TV Indisponível</Text>
-          <Text style={styles.tvPlayerPlaceholderSubText}>Canal selecionado: {currentChannel.name}</Text>
-          <Text style={styles.tvPlayerPlaceholderInfo}>Para uma experiência completa na TV, a integração de um player de vídeo nativo (como o react-native-video) é necessária.</Text>
-        </View>
+        <>
+          {loadingOverlay}
+          <iframe
+            key={currentChannel.id} // Força a recriação do iframe na troca de canal
+            src={`${currentChannel.stream}?autoplay=1`}
+            style={{ width: '100%', height: '100%', border: 'none', opacity: isVideoLoading ? 0 : 1 }}
+            allow="autoplay; fullscreen; encrypted-media"
+            onLoad={() => setIsVideoLoading(false)}
+            onError={() => setIsVideoLoading(false)} // Esconde o loading em caso de erro também
+          />
+        </>
       );
     }
 
@@ -302,36 +296,35 @@ export default function App() {
             <View style={styles.sidebarHeader}>
               <Image source={w3labsLogo} style={styles.logo} resizeMode="contain" />
             </View>
-            {isWeb && (
-              <View style={styles.categoryToggle}>
-                <TouchableOpacity onPress={toggleWebCategories}>
-                  <Feather name={webShowCategories ? "chevron-up" : "chevron-down"} size={22} color="rgba(255,255,255,0.7)" />
-                </TouchableOpacity>
-                <Text style={styles.categoryTitle}>Categorias</Text>
-              </View>
-            )}
-            {(isTV || (isWeb && webShowCategories)) && (
-              <View style={styles.categoryHeader}>
-                  <FlatList data={categories} horizontal showsHorizontalScrollIndicator={false} keyExtractor={item => item} renderItem={({ item, index }) => (
-                    <CategoryButton
-                      item={item}
-                      isActive={activeCategory === item}
-                      onPress={setActiveCategory}
-                      isFocused={isTV && focusedCategoryIndex === index}
-                      onFocus={() => setFocusedCategoryIndex(index)}
-                    />
-                  )} />
-              </View>
-            )}
+            <View style={styles.categoryHeader}>
+                <FlatList data={categories} horizontal showsHorizontalScrollIndicator={false} keyExtractor={item => item} renderItem={({ item }) => (
+                  <CategoryButton
+                    item={item}
+                    isActive={activeCategory === item}
+                    onPress={setActiveCategory}
+                    isFocused={isTV && focusedCategoryIndex === index}
+                    onFocus={() => setFocusedCategoryIndex(index)}
+                  />
+                )} />
+            </View>
             <FlatList ref={listRef} data={channels} keyExtractor={item => item.id} showsVerticalScrollIndicator={false} getItemLayout={getItemLayout}
-              renderItem={({ item, index }) => (<ChannelCard item={item} isPlaying={playingIndex === index} isFocused={isTV && focusedIndex === index} onSelect={() => changePlayingChannel(index)} onFocus={() => setFocusedIndex(index)} />)}
+              renderItem={({ item, index }) => (
+                <ChannelCard
+                  item={item}
+                  isPlaying={playingIndex === index}
+                  isFocused={isTV && focusedIndex === index}
+                  onSelect={() => changePlayingChannel(index)}
+                  onFocus={() => setFocusedIndex(index)}
+                />)}
             />
           </View>
         )}
 
         {/* Conteúdo Principal */}
         <View style={styles.mainContent}>
-          {isWeb && (<TouchableOpacity onPress={toggleSidebar} style={styles.sidebarToggleButton}><Feather name={isSidebarVisible ? "chevron-left" : "menu"} size={22} color="#FFF" /></TouchableOpacity>)}
+          {Platform.OS === 'web' && (
+            <TouchableOpacity onPress={toggleSidebar} style={styles.sidebarToggleButton}><Feather name={isSidebarVisible ? "chevron-left" : "menu"} size={22} color="#FFF" /></TouchableOpacity>
+          )}
           <View style={styles.videoContainer}>{renderVideoPlayer()}</View>
         </View>
       </View>
@@ -355,11 +348,6 @@ const styles = StyleSheet.create({
   },
   pausedText: { color: theme.textActive, fontSize: 28, fontWeight: '900', letterSpacing: 1 },
   
-  tvPlayerPlaceholder: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: theme.sidebar },
-  tvPlayerPlaceholderText: { color: theme.textActive, fontSize: 24, fontWeight: 'bold' },
-  tvPlayerPlaceholderSubText: { color: theme.text, fontSize: 18, marginTop: 8 },
-  tvPlayerPlaceholderInfo: { color: theme.textMuted, fontSize: 14, textAlign: 'center', marginTop: 20, paddingHorizontal: 40 },
-
   videoLoadingOverlay: { ...StyleSheet.absoluteFillObject, zIndex: 6, backgroundColor: 'rgba(0,0,0,0.9)', justifyContent: 'center', alignItems: 'center' },
   videoLoadingText: { color: theme.text, marginTop: 16, fontSize: 16 },
 
@@ -367,10 +355,8 @@ const styles = StyleSheet.create({
   sidebar: { width: SIDEBAR_WIDTH, backgroundColor: theme.sidebar, borderRightWidth: 1, borderColor: theme.border, flexDirection: 'column' },
   sidebarHeader: { padding: 20, borderBottomWidth: 1, borderColor: theme.border },
   logo: { height: 40, width: 'auto' },
-  categoryToggle: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingTop: 20, paddingBottom: 10 },
-  categoryTitle: { color: theme.textActive, fontSize: 16, fontWeight: 'bold' },
   categoryHeader: { 
-    paddingTop: isWeb ? 20 : (Platform.OS === 'ios' ? 60 : 40), 
+    paddingTop: 20,
     paddingBottom: 20, paddingHorizontal: 16, 
     borderBottomWidth: 1, borderColor: theme.border 
   },
