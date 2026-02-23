@@ -1,5 +1,5 @@
 import { Feather } from '@expo/vector-icons';
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Animated,
@@ -11,12 +11,14 @@ import {
   StyleSheet,
   TVEventControl,
   Text,
+  TextInput,
   TouchableOpacity,
-  View,
-  useWindowDimensions
+  View
 } from 'react-native';
-import { WebView } from 'react-native-webview';
+import Video from 'react-native-video';
 import INITIAL_CHANNELS from './channels.json';
+
+const AnimatedTouchableOpacity = Animated.createAnimatedComponent(TouchableOpacity);
 
 const w3labsLogo = require('./assets/icon.png');
 
@@ -37,46 +39,89 @@ const theme = {
   error: '#FF3B30',
 };
 
-const INITIAL_CATEGORIES = ['Todos', 'Esportes', 'Filmes e Séries', 'Canais Abertos', 'Notícias', 'Infantil'];
-
 // ==========================================
 // ⚙️ W3LABS DATA NORMALIZATION
 // ==========================================
 const processChannels = (channels) => {
   const map = new Map();
+  // 1. Consolidate streams for identical channel names and prioritize logos.
   channels.forEach(c => {
+    if (!c.name || !c.stream) return; // Skip entries without a name or stream
     const uniqueId = c.name.trim().toUpperCase().replace(/\s/g, '');
     if (!map.has(uniqueId)) {
-      map.set(uniqueId, { ...c, uniqueId, name: c.name.trim(), streams: [c.stream].filter(Boolean) });
+      map.set(uniqueId, { ...c, uniqueId, name: c.name.trim(), streams: [c.stream] });
     } else {
-      if (c.stream) map.get(uniqueId).streams.push(c.stream);
+      const existing = map.get(uniqueId);
+      existing.streams.push(c.stream);
+      // If the existing entry has no logo but the new one does, use the new logo.
+      if (!existing.logo && c.logo) {
+        existing.logo = c.logo;
+      }
     }
   });
-  return Array.from(map.values());
+
+  // 2. Convert map to array and sort alphabetically by name.
+  return Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name));
 };
 
 const PROCESSED_CHANNELS = processChannels(INITIAL_CHANNELS);
+const ALL_CHANNELS_FLAT = PROCESSED_CHANNELS;
+
+// ==========================================
+// 🌍 CONTEXTO DE PLATAFORMA COM OVERRIDE
+// ==========================================
+const PlatformContext = createContext(null);
+
+const usePlatform = () => {
+  const context = useContext(PlatformContext);
+  if (!context) {
+    throw new Error('usePlatform must be used within a PlatformProvider');
+  }
+  return context;
+};
+
+const PlatformProvider = ({ children }) => {
+  const [isTVOverride, setIsTVOverride] = useState(null); // null means no override
+  const isTV = isTVOverride !== null ? isTVOverride : Platform.isTV;
+
+  const toggleTVOverride = useCallback(() => {
+    setIsTVOverride(prev => (prev === null ? !Platform.isTV : !prev));
+  }, []);
+
+  const resetTVOverride = useCallback(() => setIsTVOverride(null), []);
+
+  const value = useMemo(() => ({ isTV, isTVOverride, toggleTVOverride, resetTVOverride }), [isTV, isTVOverride, toggleTVOverride, resetTVOverride]);
+  return <PlatformContext.Provider value={value}>{children}</PlatformContext.Provider>;
+};
 
 // ==========================================
 // 🧠 O MOTOR DA APLICAÇÃO (Business Logic)
 // ==========================================
 const useW3LabsEngine = () => {
-  const [activeCategory, setActiveCategory] = useState('Todos');
-  const [activeChannelId, setActiveChannelId] = useState(PROCESSED_CHANNELS[0]?.uniqueId);
+  const [activeChannelId, setActiveChannelId] = useState(ALL_CHANNELS_FLAT[0]?.uniqueId);
   const [streamIndex, setStreamIndex] = useState(0);
   const [isPlaying, setIsPlaying] = useState(true);
   const [isLoading, setIsLoading] = useState(true);
   const [hasError, setHasError] = useState(false);
+  const [isMuted, setIsMuted] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
 
   const channels = useMemo(() => {
-    return activeCategory === 'Todos' 
-      ? PROCESSED_CHANNELS 
-      : PROCESSED_CHANNELS.filter(c => c.category === activeCategory || c.category === 'TV Aberta');
-  }, [activeCategory]);
+    if (!searchQuery.trim()) {
+      return PROCESSED_CHANNELS.map(item => ({ ...item, key: item.uniqueId }));
+    }
+
+    // A busca também é simplificada, pois não há mais grupos.
+    const lowerCaseQuery = searchQuery.toLowerCase();
+    const searchFiltered = PROCESSED_CHANNELS.filter(item =>
+      item.name.toLowerCase().includes(lowerCaseQuery)
+    );
+    return searchFiltered.map(item => ({ ...item, key: item.uniqueId }));
+  }, [searchQuery]);
 
   const currentChannel = useMemo(() => {
-    return PROCESSED_CHANNELS.find(c => c.uniqueId === activeChannelId) || channels[0];
-  }, [activeChannelId, channels]);
+    return ALL_CHANNELS_FLAT.find(c => c.uniqueId === activeChannelId) || ALL_CHANNELS_FLAT[0];
+  }, [activeChannelId]);
 
   const currentStream = currentChannel?.streams[streamIndex];
 
@@ -100,8 +145,8 @@ const useW3LabsEngine = () => {
   }, [currentChannel, streamIndex]);
 
   return {
-    state: { activeCategory, activeChannelId, isPlaying, isLoading, hasError, channels, currentChannel, currentStream },
-    actions: { setActiveCategory, changeChannel, setIsPlaying, setIsLoading, handleError, categories: INITIAL_CATEGORIES }
+    state: { activeChannelId, isPlaying, isLoading, hasError, channels, currentChannel, currentStream, isMuted, searchQuery },
+    actions: { changeChannel, setIsPlaying, setIsLoading, handleError, setIsMuted, setSearchQuery }
   };
 };
 
@@ -118,14 +163,8 @@ const W3LabsPlayer = ({ engine }) => {
     </View>
   );
 
-  if (!state.isPlaying) return (
-    <View style={styles.centerOverlay}>
-      <Feather name="pause-circle" size={64} color={theme.textActive} />
-    </View>
-  );
-
   return (
-    <>
+    <View style={{ flex: 1, backgroundColor: '#000' }}>
       {state.isLoading && (
         <View style={[styles.centerOverlay, { zIndex: 10, backgroundColor: theme.background }]}>
           <ActivityIndicator size="large" color={theme.primary} />
@@ -133,187 +172,247 @@ const W3LabsPlayer = ({ engine }) => {
       )}
       {Platform.OS === 'web' ? (
         <iframe
-          src={`${state.currentStream}?autoplay=1`}
+          src={`${state.currentStream}?autoplay=${state.isPlaying ? 1 : 0}&mute=${state.isMuted ? 1 : 0}`}
           style={{ width: '100%', height: '100%', border: 'none' }}
-          allow="autoplay; fullscreen"
+          allow="autoplay; fullscreen; screen-wake-lock"
           onLoad={() => actions.setIsLoading(false)}
           onError={actions.handleError}
         />
       ) : (
-        <WebView
-          source={{ uri: `${state.currentStream}?autoplay=1` }}
+        <Video
+          source={{ uri: state.currentStream }}
           style={{ flex: 1, backgroundColor: theme.background, opacity: state.isLoading ? 0 : 1 }}
-          onLoadEnd={() => actions.setIsLoading(false)}
+          resizeMode="contain"
+          onLoad={() => actions.setIsLoading(false)}
           onError={actions.handleError}
-          mediaPlaybackRequiresUserAction={false}
-          allowsInlineMediaPlayback
+          paused={!state.isPlaying}
+          muted={state.isMuted}
         />
       )}
-    </>
-  );
-};
-
-// ==========================================
-// 🖥️ INTERFACE 1: WEB (Mouse e Teclado)
-// ==========================================
-const WebInterface = ({ engine }) => {
-  const { state, actions } = engine;
-  
-  return (
-    <View style={styles.webContainer}>
-      <View style={styles.webSidebar}>
-        <Image source={w3labsLogo} style={styles.logo} resizeMode="contain" />
-        <View style={styles.webCategories}>
-          {actions.categories.map(cat => (
-            <TouchableOpacity 
-              key={cat} 
-              style={[styles.webCatBtn, state.activeCategory === cat && styles.activeBtn]}
-              onPress={() => actions.setActiveCategory(cat)}>
-              <Text style={[styles.catText, state.activeCategory === cat && styles.activeText]}>{cat}</Text>
-            </TouchableOpacity>
-          ))}
+      {!state.isPlaying && !state.isLoading && !state.hasError && (
+        <View style={styles.centerOverlay}>
+          <Feather name="pause-circle" size={64} color={theme.textActive} />
         </View>
-      </View>
-      
-      <View style={styles.webMain}>
-        <View style={styles.webPlayerArea}>
-           <W3LabsPlayer engine={engine} />
-        </View>
-        <View style={styles.webChannelList}>
-          <FlatList
-            data={state.channels}
-            keyExtractor={c => c.uniqueId}
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            renderItem={({item}) => (
-              <TouchableOpacity 
-                style={[styles.webCard, state.activeChannelId === item.uniqueId && styles.activeCard]}
-                onPress={() => actions.changeChannel(item.uniqueId)}>
-                <Text style={styles.webCardTitle}>{item.name}</Text>
-              </TouchableOpacity>
-            )}
-          />
-        </View>
-      </View>
+      )}
     </View>
   );
 };
 
 // ==========================================
-// 📱 INTERFACE 2: MOBILE (Touch, Portrait)
+// ✨ COMPONENTE DE CARD ANIMADO
 // ==========================================
-const MobileInterface = ({ engine }) => {
-  const { state, actions } = engine;
-  const { width } = useWindowDimensions();
+const AnimatedCard = React.memo(({ isActive, children, style, activeStyle, ...props }) => {
+  const anim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    Animated.timing(anim, {
+      toValue: isActive ? 1 : 0,
+      duration: 250,
+      useNativeDriver: false, // backgroundColor/borderColor não são suportados pelo driver nativo
+    }).start();
+  }, [isActive]);
+
+  // Separa os estilos de layout dos estilos que serão animados
+  const { backgroundColor: baseBg, borderColor: baseBorder, ...restOfStyle } = StyleSheet.flatten(style);
+  const { backgroundColor: activeBg, borderColor: activeBorder } = StyleSheet.flatten(activeStyle);
+
+  const interpolatedStyles = {
+    backgroundColor: anim.interpolate({
+      inputRange: [0, 1],
+      outputRange: [baseBg, activeBg],
+    }),
+    borderColor: anim.interpolate({
+      inputRange: [0, 1],
+      outputRange: [baseBorder, activeBorder],
+    }),
+  };
 
   return (
-    <SafeAreaView style={styles.mobileContainer}>
-      {/* Player Fixo no Topo */}
-      <View style={[styles.mobilePlayerArea, { height: width * 0.5625 }]}>
-        <W3LabsPlayer engine={engine} />
-      </View>
-      
-      {/* Categorias Horizontais */}
-      <View style={styles.mobileCategories}>
-        <FlatList
-          data={actions.categories}
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          keyExtractor={c => c}
-          renderItem={({item}) => (
-            <TouchableOpacity 
-              style={[styles.mobileCatBtn, state.activeCategory === item && styles.activeBtn]}
-              onPress={() => actions.setActiveCategory(item)}>
-              <Text style={[styles.catText, state.activeCategory === item && styles.activeText]}>{item}</Text>
-            </TouchableOpacity>
-          )}
-        />
-      </View>
-
-      {/* Lista Vertical de Canais Otimizada para o Polegar */}
-      <FlatList
-        data={state.channels}
-        keyExtractor={c => c.uniqueId}
-        contentContainerStyle={{ padding: 16 }}
-        renderItem={({item}) => (
-          <TouchableOpacity 
-            style={[styles.mobileCard, state.activeChannelId === item.uniqueId && styles.activeCard]}
-            onPress={() => actions.changeChannel(item.uniqueId)}>
-            <View style={styles.mobileCardIcon}>
-              <Feather name="tv" size={24} color={state.activeChannelId === item.uniqueId ? theme.primary : theme.textMuted} />
-            </View>
-            <View>
-              <Text style={[styles.cardTitle, state.activeChannelId === item.uniqueId && styles.activeText]}>{item.name}</Text>
-              <Text style={styles.cardCategory}>{item.category}</Text>
-            </View>
-          </TouchableOpacity>
-        )}
-      />
-    </SafeAreaView>
+    <TouchableOpacity {...props}>
+      <Animated.View style={[restOfStyle, interpolatedStyles]}>
+        {children}
+      </Animated.View>
+    </TouchableOpacity>
   );
-};
+});
+// ==========================================
+// 🖥️ INTERFACE ÚNICA (WEB/TV)
+// ==========================================
+const ChannelItem = React.memo(({ item, isActive, ...props }) => {
+  const { isTV } = usePlatform();
+  return (
+    <AnimatedCard isActive={isActive} style={styles.channelRow} activeStyle={styles.activeCard} {...props}>
+      <View style={styles.channelCardIcon}>
+        {item.logo ? (
+          <Image source={{ uri: item.logo }} style={styles.channelCardLogoImage} resizeMode="contain" />
+        ) : (
+          <Feather name={isActive ? "play-circle" : "tv"} size={24} color={isActive ? theme.primary : theme.textMuted} />
+        )}
+      </View>
+      <View>
+        <Text style={[styles.cardTitle, isActive && styles.activeText]}>{item.name}</Text>
+        <Text style={styles.cardCategory}>{item.category}</Text>
+      </View>
+    </AnimatedCard>
+  );
+});
 
-// ==========================================
-// 📺 INTERFACE 3: TV BOX (D-Pad, Focus Native)
-// ==========================================
-const TVInterface = ({ engine }) => {
+const UnifiedInterface = ({ engine, onShowAbout }) => {
   const { state, actions } = engine;
+  const { isTV } = usePlatform();
+  const zapTimer = useRef(null);
+  const [isSidebarVisible, setIsSidebarVisible] = useState(true);
+  const sidebarTranslateX = useRef(new Animated.Value(0)).current;
 
-  // TV Remote Hook
+  const handleFocusChannel = (channelId) => {
+    if (!isTV) return;
+    if (zapTimer.current) clearTimeout(zapTimer.current);
+    
+    zapTimer.current = setTimeout(() => {
+      if (state.activeChannelId !== channelId) {
+        actions.changeChannel(channelId);
+      }
+    }, 400);
+  };
+
+  const animatedButtonStyle = {
+    transform: [
+      {
+        translateX: sidebarTranslateX.interpolate({
+          inputRange: [-350, 0],
+          outputRange: [16, 350 + 16],
+          extrapolate: 'clamp',
+        }),
+      },
+    ],
+  };
+
+  const toggleSidebar = useCallback(() => {
+    setIsSidebarVisible(prev => !prev);
+  }, []);
+
   useEffect(() => {
-    TVEventControl.enableTVRemoteHandler();
-    const handler = () => actions.setIsPlaying(p => !p);
-    TVEventControl.addEventListener('playPause', handler);
+    Animated.timing(sidebarTranslateX, {
+      toValue: isSidebarVisible ? 0 : -350, // sidebar width
+      duration: 300,
+      useNativeDriver: true,
+    }).start();
+  }, [isSidebarVisible]);
+
+  useEffect(() => {
+    if (Platform.isTV) {
+      TVEventControl.enableTVRemoteHandler();
+      const playPauseHandler = () => actions.setIsPlaying(p => !p);
+      TVEventControl.addEventListener('playPause', playPauseHandler);
+      TVEventControl.addEventListener('menu', toggleSidebar);
+      return () => {
+        TVEventControl.removeEventListener('playPause', playPauseHandler);
+        TVEventControl.removeEventListener('menu', toggleSidebar);
+        TVEventControl.disableTVRemoteHandler();
+      };
+    }
+  }, [actions, toggleSidebar]);
+
+  useEffect(() => {
     return () => {
-      TVEventControl.removeEventListener('playPause', handler);
-      TVEventControl.disableTVRemoteHandler();
+      if (zapTimer.current) {
+        clearTimeout(zapTimer.current);
+      }
     };
   }, []);
 
   return (
-    <View style={styles.tvContainer}>
-      <View style={styles.tvPlayerBackground}>
+    <View style={styles.container}>
+      <Animated.View style={[styles.sidebar, { transform: [{ translateX: sidebarTranslateX }] }]}>
+        <Image source={w3labsLogo} style={styles.logo} resizeMode="contain" />
+        <View style={{flex: 1}}>
+            <FlatList
+            data={state.channels}
+            keyExtractor={c => c.uniqueId}
+            ListHeaderComponent={
+                <View style={[styles.searchContainer, {marginHorizontal: 0, marginTop: 0}]}>
+                <Feather name="search" size={20} color={theme.textMuted} style={styles.searchIcon} />
+                <TextInput
+                    isTVSelectable={isTV}
+                    style={styles.searchInput}
+                    placeholder="Buscar canal..."
+                    placeholderTextColor={theme.textMuted}
+                    value={state.searchQuery}
+                    onChangeText={actions.setSearchQuery}
+                />
+                </View>
+            }
+            renderItem={({ item }) => {
+                const isActive = state.activeChannelId === item.uniqueId;
+                return <ChannelItem isTVSelectable={isTV} item={item} isActive={isActive} onPress={() => actions.changeChannel(item.uniqueId)} onFocus={() => handleFocusChannel(item.uniqueId)} />;
+            }}
+            />
+        </View>
+        <TouchableOpacity isTVSelectable={isTV} style={[styles.categoryButton, { marginTop: 'auto' }]} onPress={onShowAbout}>
+            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                <Feather name="info" size={18} color={theme.text} style={{ marginRight: 12 }} />
+                <Text style={styles.catText}>Sobre</Text>
+            </View>
+        </TouchableOpacity>
+      </Animated.View>
+      
+      <View style={styles.playerArea}>
         <W3LabsPlayer engine={engine} />
       </View>
-      
-      {/* Interface sobreposta com gradiente/escurecimento inferior na TV */}
-      <View style={styles.tvOverlayUI}>
-        <Image source={w3labsLogo} style={styles.tvLogo} resizeMode="contain" />
-        
-        <View style={styles.tvListContainer}>
-          <Text style={styles.tvSectionTitle}>Categorias</Text>
-          <FlatList
-            data={actions.categories}
-            horizontal
-            keyExtractor={c => c}
-            renderItem={({item}) => (
-              <TouchableOpacity 
-                isTVSelectable
-                style={[styles.tvCatBtn, state.activeCategory === item && styles.activeBtn]}
-                onFocus={() => actions.setActiveCategory(item)}>
-                <Text style={styles.catText}>{item}</Text>
-              </TouchableOpacity>
-            )}
-          />
+      <AnimatedTouchableOpacity
+        isTVSelectable={isTV}
+        onPress={toggleSidebar}
+        style={[styles.sidebarToggleButton, animatedButtonStyle]}
+        hasTVPreferredFocus={!isSidebarVisible && isTV}
+      >
+        <Feather name={isSidebarVisible ? "chevron-left" : "menu"} size={24} color={theme.text} />
+      </AnimatedTouchableOpacity>
+    </View>
+  );
+};
 
-          <Text style={[styles.tvSectionTitle, { marginTop: 20 }]}>Canais ({state.channels.length})</Text>
-          <FlatList
-            data={state.channels}
-            horizontal
-            keyExtractor={c => c.uniqueId}
-            renderItem={({item}) => (
-              <TouchableOpacity 
-                isTVSelectable
-                style={[styles.tvCard, state.activeChannelId === item.uniqueId && styles.activeCard]}
-                onPress={() => actions.changeChannel(item.uniqueId)}
-                onFocus={() => { /* Opcional: Auto-play ao focar (Zapping rápido) */ }}>
-                <Text style={styles.tvCardTitle} numberOfLines={2}>{item.name}</Text>
-              </TouchableOpacity>
-            )}
-          />
+// ==========================================
+// ℹ️ TELA SOBRE
+// ==========================================
+const AboutScreen = ({ onClose }) => {
+  const { isTV, isTVOverride, toggleTVOverride, resetTVOverride } = usePlatform();
+  return (
+    <SafeAreaView style={styles.root}>
+      <View style={styles.aboutContainer}>
+        <TouchableOpacity style={styles.aboutCloseButton} onPress={onClose}>
+          <Feather name="x" size={30} color={theme.text} />
+        </TouchableOpacity>
+
+        <Image source={w3labsLogo} style={[styles.logo, { height: 60, marginBottom: 16 }]} resizeMode="contain" />
+        <Text style={styles.aboutTitle}>W3Labs TV Player</Text>
+        <Text style={styles.aboutText}>Versão 1.0.0</Text>
+        <Text style={styles.aboutText}>Desenvolvido com React Native</Text>
+
+        <View style={{ marginTop: 20, alignItems: 'center' }}>
+          <Text style={styles.aboutText}>Modo de Interface:</Text>
+          <TouchableOpacity
+            isTVSelectable={isTV}
+            style={[styles.categoryButton, { width: 200, marginBottom: 10 }]}
+            onPress={toggleTVOverride}
+          >
+            <Text style={styles.catText}>
+              {isTVOverride === null
+                ? `Automático (${Platform.isTV ? 'TV' : 'Web'})`
+                : (isTVOverride ? 'Forçar TV' : 'Forçar Web')}
+            </Text>
+          </TouchableOpacity>
+          {isTVOverride !== null && (
+            <TouchableOpacity
+              isTVSelectable={isTV}
+              style={[styles.categoryButton, { width: 200, backgroundColor: theme.error }]}
+              onPress={resetTVOverride}
+            >
+              <Text style={styles.catText}>Redefinir</Text>
+            </TouchableOpacity>
+          )}
         </View>
       </View>
-    </View>
+    </SafeAreaView>
   );
 };
 
@@ -321,24 +420,19 @@ const TVInterface = ({ engine }) => {
 // 🚀 ROTEADOR DE AMBIENTE AUTOMÁTICO
 // ==========================================
 export default function App() {
+  const [isAboutScreenVisible, setIsAboutScreenVisible] = useState(false);
   const engine = useW3LabsEngine();
-  
-  // W3Labs Backend/Frontend Logic: Detecção inteligente do ecossistema
-  const getDeviceEnvironment = () => {
-    if (Platform.OS === 'web') return 'WEB';
-    if (Platform.isTV) return 'TV';
-    return 'MOBILE'; // iOS e Android nativos
-  };
-
-  const environment = getDeviceEnvironment();
-
   return (
-    <View style={styles.root}>
-      <StatusBar hidden={environment === 'TV'} barStyle="light-content" />
-      {environment === 'WEB' && <WebInterface engine={engine} />}
-      {environment === 'MOBILE' && <MobileInterface engine={engine} />}
-      {environment === 'TV' && <TVInterface engine={engine} />}
-    </View>
+    <PlatformProvider>
+      <View style={styles.root}>
+        <StatusBar hidden={Platform.isTV} barStyle="light-content" />
+        {isAboutScreenVisible ? (
+          <AboutScreen onClose={() => setIsAboutScreenVisible(false)} />
+        ) : (
+          <UnifiedInterface engine={engine} onShowAbout={() => setIsAboutScreenVisible(true)} />
+        )}
+      </View>
+    </PlatformProvider>
   );
 }
 
@@ -353,38 +447,83 @@ const styles = StyleSheet.create({
   // Commons
   catText: { color: theme.text, fontSize: 14, fontWeight: '600' },
   activeText: { color: theme.background, fontWeight: 'bold' },
-  activeBtn: { backgroundColor: theme.primary, borderColor: theme.primary },
   activeCard: { borderColor: theme.primary, backgroundColor: theme.cardPlaying },
   cardTitle: { color: theme.text, fontSize: 16, fontWeight: 'bold' },
   cardCategory: { color: theme.textMuted, fontSize: 12, marginTop: 4 },
 
-  // Web
-  webContainer: { flex: 1, flexDirection: 'row' },
-  webSidebar: { width: 280, backgroundColor: theme.surface, padding: 24, borderRightWidth: 1, borderColor: theme.border },
-  logo: { width: 140, height: 40, marginBottom: 40 },
-  webCatBtn: { padding: 14, borderRadius: 8, marginBottom: 12, borderWidth: 1, borderColor: theme.border },
-  webMain: { flex: 1, flexDirection: 'column' },
-  webPlayerArea: { flex: 1, backgroundColor: '#000' },
-  webChannelList: { height: 160, backgroundColor: theme.surface, padding: 20, borderTopWidth: 1, borderColor: theme.border },
-  webCard: { width: 200, height: 100, backgroundColor: theme.card, borderRadius: 12, justifyContent: 'center', alignItems: 'center', marginRight: 16, borderWidth: 2, borderColor: 'transparent' },
-  webCardTitle: { color: theme.text, fontSize: 16, fontWeight: 'bold' },
+  // Unified Interface
+  container: { flex: 1, backgroundColor: theme.background },
+  sidebar: { position: 'absolute', left: 0, top: 0, bottom: 0, width: 350, backgroundColor: theme.surface, padding: 24, borderRightWidth: 1, borderColor: theme.border, display: 'flex', flexDirection: 'column', zIndex: 10 },
+  logo: { width: 140, height: 40, marginBottom: 24 },
+  categoryButton: { padding: 14, borderRadius: 8, marginBottom: 12, borderWidth: 1, borderColor: theme.border },
+  playerArea: { flex: 1, backgroundColor: '#000' },
+  sidebarToggleButton: {
+    position: 'absolute',
+    top: 16,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    padding: 12,
+    borderRadius: 24,
+    zIndex: 15,
+    borderWidth: 2,
+    borderColor: 'transparent',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
 
-  // Mobile
-  mobileContainer: { flex: 1, backgroundColor: theme.background },
-  mobilePlayerArea: { width: '100%', backgroundColor: '#000', zIndex: 10, elevation: 5 },
-  mobileCategories: { paddingVertical: 16, paddingHorizontal: 8, borderBottomWidth: 1, borderColor: theme.border },
-  mobileCatBtn: { paddingHorizontal: 20, paddingVertical: 10, borderRadius: 24, backgroundColor: theme.card, marginHorizontal: 8 },
-  mobileCard: { flexDirection: 'row', alignItems: 'center', padding: 16, backgroundColor: theme.surface, borderRadius: 16, marginBottom: 12, borderWidth: 1, borderColor: theme.border },
-  mobileCardIcon: { width: 50, height: 50, borderRadius: 12, backgroundColor: theme.card, justifyContent: 'center', alignItems: 'center', marginRight: 16 },
+  // Search
+  searchContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: theme.surface,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    margin: 16,
+    borderWidth: 1,
+    borderColor: theme.border,
+  },
+  searchIcon: {
+    marginRight: 8,
+  },
+  searchInput: {
+    flex: 1,
+    height: 44,
+    color: theme.text,
+    fontSize: 16,
+  },
 
-  // TV
-  tvContainer: { flex: 1, backgroundColor: '#000' },
-  tvPlayerBackground: { ...StyleSheet.absoluteFillObject },
-  tvOverlayUI: { ...StyleSheet.absoluteFillObject, justifyContent: 'flex-end', padding: 40, backgroundColor: 'rgba(0,0,0,0.5)' },
-  tvLogo: { position: 'absolute', top: 40, left: 40, width: 180, height: 60 },
-  tvListContainer: { height: 320 },
-  tvSectionTitle: { color: theme.textActive, fontSize: 24, fontWeight: 'bold', marginBottom: 16, textShadowColor: '#000', textShadowOffset: {width: 1, height: 1}, textShadowRadius: 4 },
-  tvCatBtn: { paddingHorizontal: 24, paddingVertical: 14, borderRadius: 8, backgroundColor: 'rgba(255,255,255,0.1)', marginRight: 16 },
-  tvCard: { width: 220, height: 120, backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: 12, justifyContent: 'center', alignItems: 'center', padding: 16, marginRight: 16, borderWidth: 3, borderColor: 'transparent' },
-  tvCardTitle: { color: theme.text, fontSize: 18, fontWeight: 'bold', textAlign: 'center' },
+  // Channel List Items
+  channelRow: { flexDirection: 'row', alignItems: 'center', padding: 16, backgroundColor: theme.surface, borderRadius: 16, marginBottom: 12, borderWidth: 1, borderColor: theme.border },
+  channelCardIcon: { width: 50, height: 50, borderRadius: 12, backgroundColor: theme.card, justifyContent: 'center', alignItems: 'center', marginRight: 16, overflow: 'hidden' },
+  channelCardLogoImage: {
+    width: '100%',
+    height: '100%',
+  },
+
+  // About Screen
+  aboutContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  aboutTitle: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: theme.textActive,
+    marginBottom: 8,
+  },
+  aboutText: {
+    fontSize: 16,
+    color: theme.textMuted,
+    marginBottom: 24,
+  },
+  aboutCloseButton: {
+    position: 'absolute',
+    top: Platform.OS === 'android' ? 20 : 60,
+    right: 20,
+    zIndex: 1,
+    padding: 10,
+    backgroundColor: theme.surface,
+    borderRadius: 25,
+  },
 });
