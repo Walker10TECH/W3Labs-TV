@@ -175,6 +175,32 @@ export default function App() {
   const brightnessRef = useRef(0.5); // Ref para manter valor síncrono no PanResponder
   const hideGestureTimeout = useRef(null);
 
+  // Script para bloquear anúncios dentro do WebView
+  const adBlockerJs = `
+    (function() {
+      const adSelectors = [
+        'iframe[src*="ads"]', 'iframe[src*="adserver"]', '[id*="google_ads"]',
+        '[id*="ad_"]', '[class*="ad-"]', '[class*="advert"]', '.ad', '.ads',
+        '.advertisement', '.ad-banner', '.ad-container', '.ad-wrapper',
+        '.ad-slot', '.ad-box', '.google-ad', 'div[data-ad-id]'
+      ];
+
+      const removeNode = (node) => {
+        if (node && node.parentNode) {
+          node.parentNode.removeChild(node);
+        }
+      };
+
+      const cleanDOM = () => {
+        adSelectors.forEach(selector => { try { document.querySelectorAll(selector).forEach(removeNode); } catch (e) {} });
+      };
+
+      window.open = () => null; // Bloqueia pop-ups
+      setInterval(cleanDOM, 500); // Roda a limpeza em intervalos para pegar anúncios dinâmicos
+    })();
+    true; // Retorno para injectJavaScript
+  `;
+
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const tuningAnim = useRef(new Animated.Value(1)).current;
   const pulseAnim = useRef(new Animated.Value(1)).current;
@@ -678,6 +704,7 @@ export default function App() {
   // ==========================================
   const renderHeader = () => (
     <View style={styles.header}>
+      <LinearGradient colors={['rgba(0,0,0,0.6)', 'transparent']} style={{...StyleSheet.absoluteFillObject, height: 80}} />
       <View style={styles.logoContainer}>
         {hasSidebar && (
           <TouchableOpacity onPress={() => setIsSidebarCollapsed(prev => !prev)} style={{ marginRight: 16 }}>
@@ -739,15 +766,22 @@ export default function App() {
             <Text style={styles.castSubtitle}>Exibindo <Text style={{ color: '#fff', fontWeight: 'bold' }}>{activeItem.name}</Text></Text>
           </View>
         ) : !isTuning && WebView ? (
-          <WebView 
+          <WebView
             ref={webviewRef}
-            source={{ uri: activeItem.streamUrl }}
+            source={{
+              html: `
+                <style>body,html{margin:0;padding:0;overflow:hidden;background-color:#000;}iframe{width:100vw;height:100vh;border:none;}</style>
+                <body><iframe src="${activeItem.streamUrl}" allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowfullscreen="true"></iframe></body>
+              `,
+              baseUrl: 'https://reidoscanais.io'
+            }}
             style={styles.webview}
             allowsFullscreenVideo={true}
             allowsInlineMediaPlayback={true}
             allowsPictureInPictureMediaPlayback={true}
             mediaPlaybackRequiresUserAction={false}
             backgroundColor="#000"
+            injectedJavaScript={adBlockerJs}
           />
         ) : !isTuning && !WebView ? (
           <WebVideoPlayer streamUrl={activeItem.streamUrl} />
@@ -869,22 +903,26 @@ export default function App() {
   }
 
   // 2. INTERFACE DE CELULAR (MOBILE)
-  if (isMobile) {
+  // Usa a interface mobile para telas pequenas (celulares) ou qualquer
+  // dispositivo em modo retrato (tablets 9:16), que se beneficia
+  // de um layout vertical.
+  if (isMobile || !isLandscape) {
     return (
       <View style={styles.container}>
-        <StatusBar barStyle="light-content" translucent backgroundColor="#000" hidden={isMobileLandscape} />
-        {!isMobileLandscape && renderHeader()}
-        <View style={styles.mainContent}>
-          <View style={styles.playerColumn}>
+        <StatusBar barStyle="light-content" translucent backgroundColor="transparent" hidden={isMobileLandscape} />
+        
+        {/* A View principal agora é uma coluna que começa com o player no topo. */}
+        <View style={{ flex: 1 }}>
+          {/* Container do Player que permite sobreposição do cabeçalho */}
+          <View>
             {renderPlayer(isMobileLandscape ? { flex: 1, height: '100%', aspectRatio: undefined } : { aspectRatio: 16 / 9 }, isMobileLandscape)}
-            {!isMobileLandscape && renderBelowPlayerInfo()}
-            {!isMobileLandscape && (
-              <View style={styles.epgMobileContainer}>
-                <EpgContent />
-              </View>
-            )}
+            {!isMobileLandscape && <View style={styles.headerAbsolute}>{renderHeader()}</View>}
           </View>
+
+          {!isMobileLandscape && renderBelowPlayerInfo()}
+          {!isMobileLandscape && <View style={{flex: 1}}><EpgContent /></View>}
         </View>
+
         {renderCastModal()}
       </View>
     );
@@ -896,8 +934,10 @@ export default function App() {
   return (
     <View style={styles.container}>
       <StatusBar barStyle="light-content" translucent backgroundColor="#000" />
-      {renderHeader()}
-      <View style={styles.mainContentDesktop}>
+      <View style={styles.desktopHeaderWrapper}>
+        {renderHeader()}
+      </View>
+      <View style={[styles.mainContentDesktop, {flex: 1}]}>
         <View style={styles.playerColumn}>
           {/* Flex 1 faz o Player crescer fluidamente quando o sidebar minimiza */}
           {renderPlayer({ flex: 1 })}
@@ -933,10 +973,19 @@ export default function App() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#000' },
   mainContent: { flex: 1 },
-  mainContentDesktop: { flexDirection: 'row' },
+  mainContentDesktop: { flexDirection: 'row'},
   
   // CABEÇALHO (HEADER)
-  header: { height: 60, backgroundColor: '#000', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, marginTop: Platform.OS === 'android' ? StatusBar.currentHeight : 0 },
+  desktopHeaderWrapper: { backgroundColor: '#000', paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight : 0 },
+  header: { height: 60, backgroundColor: 'transparent', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16 },
+  headerAbsolute: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 10,
+    paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight : 0,
+  },
   logoContainer: { flexDirection: 'row', alignItems: 'center' },
   brandText: { color: '#fff', fontSize: 20, fontWeight: '800', letterSpacing: -0.5 },
   brandPlus: { color: '#E3262E', fontWeight: '900' },
