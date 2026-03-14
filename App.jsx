@@ -1,25 +1,16 @@
-import { LinearGradient } from 'expo-linear-gradient';
 import {
   AlertTriangle,
-  CalendarDays,
   Cast,
-  ChevronUp,
   ExternalLink,
   MonitorPlay,
   PictureInPicture,
   PlayCircle,
-  Menu,
-  Radio,
   RefreshCw,
   Search,
-  SignalHigh,
-  SignalLow,
-  SignalMedium,
   Smartphone,
   Sun,
   Tv,
   Volume2,
-  X
 } from 'lucide-react-native';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
@@ -41,6 +32,7 @@ import {
   useWindowDimensions,
   View,
 } from 'react-native';
+import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 // ==========================================
 // MÓDULOS CROSS-PLATFORM SEGUROS (Evita crash no Expo Go)
@@ -127,43 +119,17 @@ const WebVideoPlayer = ({ streamUrl }) => {
 const API_BASE_URL = 'https://api.reidoscanais.io';
 const CHROMECAST_RECEIVER_APP_ID = 'CC1AD845';
 
-// ==========================================
-// MÓDULOS NATIVOS SIMULADOS (para desenvolvimento)
-// ==========================================
-const MockNativeModules = {
-  VolumeManager: {
-    setVolume: (value) => {
-      console.log(`[MOCK] Volume nativo definido para: ${Math.round(value * 100)}%`);
-    }
-  },
-  Brightness: {
-    setBrightness: (value) => {
-      console.log(`[MOCK] Brilho nativo definido para: ${Math.round(value * 100)}%`);
-    }
-  }
-};
-
-// Dados Mock para Cast Visual (usados no Expo Go e Web sem API)
-const CAST_DEVICES = [
-  { id: 'dev1', name: 'Smart TV Sala' },
-  { id: 'dev2', name: 'Chromecast Quarto' },
-  { id: 'dev3', name: 'Home Theater' },
-];
-
-export default function App() {
+const AppContent = () => {
   const [items, setItems] = useState([]);
   const [activeItem, setActiveItem] = useState(null);
   const [isTuning, setIsTuning] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [refreshKey, setRefreshKey] = useState(0);
   const [retryCount, setRetryCount] = useState(0);
-  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
-  const sidebarWidthAnim = useRef(new Animated.Value(1)).current;
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
   const [castState, setCastState] = useState({ isCasting: false, deviceName: null });
   const [isCastApiAvailable, setIsCastApiAvailable] = useState(false);
-  const [isCastModalVisible, setIsCastModalVisible] = useState(false);
   const webviewRef = useRef(null);
   const appState = useRef(AppState.currentState);
   
@@ -205,14 +171,9 @@ export default function App() {
   const tuningAnim = useRef(new Animated.Value(1)).current;
   const pulseAnim = useRef(new Animated.Value(1)).current;
 
+  const insets = useSafeAreaInsets();
   const { width, height } = useWindowDimensions();
   const isLandscape = width > height;
-  const isMobile = width < 768;
-  const isTablet = width >= 768 && width < 1024;
-  const isLaptop = width >= 1024 && width < 1440;
-  const isDesktop = width >= 1440;
-  const hasSidebar = !isMobile;
-  const isMobileLandscape = isMobile && isLandscape;
 
   // Ref para largura atualizada (necessário para o PanResponder calcular os lados corretamente)
   const widthRef = useRef(width);
@@ -246,15 +207,9 @@ export default function App() {
         if (isVolume) {
           volumeRef.current = newValue;
           setVolume(newValue);
-          if (Platform.OS !== 'web') {
-            MockNativeModules.VolumeManager.setVolume(newValue);
-          }
         } else {
           brightnessRef.current = newValue;
           setBrightness(newValue);
-          if (Platform.OS !== 'web') {
-            MockNativeModules.Brightness.setBrightness(newValue);
-          }
         }
 
         setGestureState({ visible: true, icon: isVolume ? 'volume' : 'brightness', value: newValue, label: isVolume ? 'VOLUME' : 'BRILHO' });
@@ -429,23 +384,21 @@ export default function App() {
   }, [castState.isCasting, activeItem, isCastApiAvailable]);
 
   const handleCastAction = () => {
-    if (!isCastApiAvailable) {
-      setIsCastModalVisible(true); // Abre o modal de simulação no Expo Go
-    } else if (Platform.OS === 'web') {
-      window.cast.framework.CastContext.getInstance().requestSession().catch(e => console.error('W3Labs: Erro ao solicitar sessão de cast (Web).', e));
+    if (castState.isCasting) {
+      if (Platform.OS === 'web' && isCastApiAvailable) {
+        window.cast.framework.CastContext.getInstance().endCurrentSession(true);
+      } else if (GoogleCast) {
+        GoogleCast.endSession().catch(e => console.error('W3Labs: Erro ao encerrar sessão de cast (Nativo).', e));
+      }
+      return;
+    }
+    
+    if (Platform.OS === 'web') {
+      if (isCastApiAvailable) {
+        window.cast.framework.CastContext.getInstance().requestSession().catch(e => console.error('W3Labs: Erro ao solicitar sessão de cast (Web).', e));
+      }
     } else if (GoogleCast) {
       GoogleCast.showCastDialog().catch(e => console.error('W3Labs: Erro ao exibir diálogo de cast (Nativo).', e));
-    }
-  };
-
-  const handleStopCast = () => {
-    if (!isCastApiAvailable) {
-      setCastState({ isCasting: false, deviceName: null });
-      setIsCastModalVisible(false);
-    } else if (Platform.OS === 'web') {
-      window.cast.framework.CastContext.getInstance().endCurrentSession(true);
-    } else if (GoogleCast) {
-      GoogleCast.endSession().catch(e => console.error('W3Labs: Erro ao encerrar sessão de cast (Nativo).', e));
     }
   };
 
@@ -682,7 +635,7 @@ export default function App() {
         initialNumToRender={12}
         maxToRenderPerBatch={15}
         windowSize={5}
-        contentContainerStyle={{ paddingBottom: 40 }}
+        contentContainerStyle={{ paddingBottom: 16 }}
         ListEmptyComponent={
           isLoading ? (
             <ActivityIndicator size="large" color="#E3262E" style={{ marginTop: 40 }} />
@@ -699,31 +652,6 @@ export default function App() {
     </View>
   ), [isLoading, error, items, activeItem, renderEpgItem, searchQuery]);
 
-  // ==========================================
-  // FRAGMENTOS DE UI
-  // ==========================================
-  const renderHeader = () => (
-    <View style={styles.header}>
-      <LinearGradient colors={['rgba(0,0,0,0.6)', 'transparent']} style={{...StyleSheet.absoluteFillObject, height: 80}} />
-      <View style={styles.logoContainer}>
-        {hasSidebar && (
-          <TouchableOpacity onPress={() => setIsSidebarCollapsed(prev => !prev)} style={{ marginRight: 16 }}>
-            <Menu size={24} color="#fff" />
-          </TouchableOpacity>
-        )}
-        <Text style={styles.brandText}>W3Labs <Text style={styles.brandPlus}>tv+</Text></Text>
-      </View>
-      <View style={styles.headerActions}>
-        <TouchableOpacity onPress={handleForcePiP} style={styles.headerBtn}>
-          <PictureInPicture size={22} color="#fff" />
-        </TouchableOpacity>
-        <TouchableOpacity onPress={handleCastAction} style={styles.headerBtn}>
-          <Cast size={22} color={castState.isCasting ? '#E3262E' : '#fff'} />
-        </TouchableOpacity>
-      </View>
-    </View>
-  );
-
   const renderBelowPlayerInfo = () => (
     activeItem && !isTuning ? (
       <View style={styles.belowPlayerInfo}>
@@ -739,14 +667,22 @@ export default function App() {
             </View>
           </View>
         </View>
-        <TouchableOpacity style={styles.bpAction} onPress={() => Linking.openURL(activeItem.streamUrl)}>
-          <ExternalLink size={20} color="#fff" />
-        </TouchableOpacity>
+        <View style={styles.bpActions}>
+          <TouchableOpacity onPress={handleForcePiP} style={styles.bpActionBtn}>
+            <PictureInPicture size={20} color="#fff" />
+          </TouchableOpacity>
+          <TouchableOpacity onPress={handleCastAction} style={styles.bpActionBtn}>
+            <Cast size={20} color={castState.isCasting ? '#E3262E' : '#fff'} />
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.bpActionBtn} onPress={() => Linking.openURL(activeItem.streamUrl)}>
+            <ExternalLink size={20} color="#fff" />
+          </TouchableOpacity>
+        </View>
       </View>
     ) : null
   );
 
-  const renderPlayer = (layoutStyle, showTopInfo = false) => (
+  const renderPlayer = (layoutStyle) => (
     <View style={[styles.playerContentWrapper, layoutStyle]}>
       <View style={styles.videoContainer}>
         {!activeItem ? (
@@ -815,185 +751,57 @@ export default function App() {
           </View>
         </View>
       )}
-
-      {showTopInfo && activeItem && !isTuning && (
-        <View style={styles.topInfoContainer}>
-          <Text style={styles.topChannelName} numberOfLines={1}>{activeItem.name}</Text>
-        </View>
-      )}
     </View>
   );
 
-  const renderCastModal = () => (
-    isCastModalVisible && !isCastApiAvailable ? (
-      <View style={styles.modalOverlay}>
-        <View style={styles.modalContent}>
-          <View style={styles.modalHeader}>
-            <View style={styles.row}>
-              <Cast size={20} color="#fff" />
-              <Text style={styles.modalTitle}>Transmitir Tela</Text>
-            </View>
-            <TouchableOpacity onPress={() => setIsCastModalVisible(false)} style={styles.closeModalBtn}>
-              <X size={24} color="#999" />
-            </TouchableOpacity>
-          </View>
-          <View style={styles.modalBody}>
-            {castState.isCasting && (
-              <TouchableOpacity style={styles.stopCastBtn} onPress={handleStopCast}>
-                <View style={styles.stopCastContainer}>
-                  <X size={16} color="#fff" />
-                  <Text style={styles.stopCastText}>Desconectar Transmissão</Text>
-                </View>
-              </TouchableOpacity>
-            )}
-            <Text style={styles.modalSectionTitle}>Dispositivos Encontrados</Text>
-            {CAST_DEVICES.map(device => {
-              const isActive = castState.isCasting && castState.deviceName === device.name;
-              return (
-                <TouchableOpacity key={device.id} activeOpacity={0.7} onPress={() => {
-                  setCastState({ isCasting: true, deviceName: device.name });
-                  setIsCastModalVisible(false);
-                }}>
-                  <View style={[styles.deviceBtn, isActive && styles.deviceBtnActive]}>
-                    <View style={styles.row}><Tv size={20} color={isActive ? "#E3262E" : "#999"} /><Text style={[styles.deviceText, isActive && { color: '#fff', fontWeight: 'bold' }]}>{device.name}</Text></View>
-                    {isActive ? <SignalHigh size={18} color="#E3262E" /> : <ChevronUp size={16} color="#333" style={{transform: [{rotate: '90deg'}]}} />}
-                  </View>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-          <View style={styles.modalFooter}><Text style={styles.modalFooterText}>Conectado à rede: Wifi_Casa</Text></View>
-        </View>
-      </View>
-    ) : null
-  );
-
   // ==========================================
-  // RENDERIZAÇÃO PRINCIPAL (3 INTERFACES)
+  // RENDERIZAÇÃO PRINCIPAL RESPONSIVA
   // ==========================================
-
-  // Efeito da Animação do Sidebar
-  useEffect(() => {
-    Animated.timing(sidebarWidthAnim, {
-      toValue: isSidebarCollapsed ? 0 : 1,
-      duration: 350,
-      useNativeDriver: false,
-    }).start();
-  }, [isSidebarCollapsed]);
-
-  // 1. INTERFACE DE TV (ANDROID TV / APPLE TV)
-  if (Platform.isTV) {
-    return (
-      <View style={styles.container}>
-        <StatusBar hidden />
-        <View style={StyleSheet.absoluteFillObject}>
-          {renderPlayer({ flex: 1 }, true)}
-        </View>
-        <View style={styles.tvSidebar}>
-          <LinearGradient colors={['rgba(0,0,0,0.95)', 'rgba(0,0,0,0.7)', 'transparent']} start={{x:0, y:0}} end={{x:1, y:0}} style={StyleSheet.absoluteFillObject} pointerEvents="none" />
-          <View style={styles.tvHeader}>
-            <Text style={styles.brandText}>W3Labs <Text style={styles.brandPlus}>tv+</Text></Text>
-            <Text style={styles.tvSubtitle}>GUIA DE CANAIS</Text>
-          </View>
-          <EpgContent />
-        </View>
-        {renderCastModal()}
-      </View>
-    );
-  }
-
-  // 2. INTERFACE DE CELULAR (MOBILE)
-  // Usa a interface mobile para telas pequenas (celulares) ou qualquer
-  // dispositivo em modo retrato (tablets 9:16), que se beneficia
-  // de um layout vertical.
-  if (isMobile || !isLandscape) {
-    return (
-      <View style={styles.container}>
-        <StatusBar barStyle="light-content" translucent backgroundColor="transparent" hidden={isMobileLandscape} />
-        
-        {/* A View principal agora é uma coluna que começa com o player no topo. */}
-        <View style={{ flex: 1 }}>
-          {/* Container do Player que permite sobreposição do cabeçalho */}
-          <View>
-            {renderPlayer(isMobileLandscape ? { flex: 1, height: '100%', aspectRatio: undefined } : { aspectRatio: 16 / 9 }, isMobileLandscape)}
-            {!isMobileLandscape && <View style={styles.headerAbsolute}>{renderHeader()}</View>}
-          </View>
-
-          {!isMobileLandscape && renderBelowPlayerInfo()}
-          {!isMobileLandscape && <View style={{flex: 1}}><EpgContent /></View>}
-        </View>
-
-        {renderCastModal()}
-      </View>
-    );
-  }
-
-  // 3. INTERFACE DE TABLET E PCS (DESKTOP)
-  const sidebarMaxWidth = isDesktop ? 460 : isLaptop ? 400 : 340;
-  
   return (
     <View style={styles.container}>
-      <StatusBar barStyle="light-content" translucent backgroundColor="#000" />
-      <View style={styles.desktopHeaderWrapper}>
-        {renderHeader()}
-      </View>
-      <View style={[styles.mainContentDesktop, {flex: 1}]}>
-        <View style={styles.playerColumn}>
-          {/* Flex 1 faz o Player crescer fluidamente quando o sidebar minimiza */}
-          {renderPlayer({ flex: 1 })}
+      <StatusBar barStyle="light-content" translucent backgroundColor="#000" hidden={isLandscape && Platform.OS !== 'web'} />
+      <View style={[
+        styles.responsiveLayout,
+        {
+          flexDirection: isLandscape ? 'row' : 'column',
+          paddingTop: !isLandscape ? insets.top : 0,
+          paddingBottom: insets.bottom,
+          paddingLeft: insets.left,
+          paddingRight: insets.right,
+        }
+      ]}>
+        
+        <View style={[styles.playerSection, isLandscape ? { flex: 1 } : {}]}>
+          {renderPlayer(isLandscape ? { flex: 1 } : { width: '100%', aspectRatio: 16 / 9 })}
           {renderBelowPlayerInfo()}
         </View>
         
-        <Animated.View style={[
-          styles.epgSidebar,
-          {
-            width: sidebarWidthAnim.interpolate({ inputRange: [0, 1], outputRange: [0, sidebarMaxWidth] }),
-            opacity: sidebarWidthAnim,
-            overflow: 'hidden',
-            borderLeftWidth: sidebarWidthAnim.interpolate({ inputRange: [0, 1], outputRange: [0, 1] })
-          }
-        ]}>
-          <View style={{ width: sidebarMaxWidth, flex: 1 }}>
-            <View style={[styles.epgHeaderDesktop, { width: sidebarMaxWidth }]}>
-              <Text style={styles.epgTitleDesktop}>Guia de TV</Text>
-              <TouchableOpacity onPress={() => setIsSidebarCollapsed(true)} style={{ padding: 4 }}>
-                <X size={20} color="#999" />
-              </TouchableOpacity>
-            </View>
-            <EpgContent />
-          </View>
-        </Animated.View>
+        <View style={[styles.epgSection, isLandscape ? { width: Math.max(280, Math.min(width * 0.4, 400)), borderLeftWidth: 1, borderColor: '#222' } : { flex: 1 }]}>
+          <EpgContent />
+        </View>
+
       </View>
-      {renderCastModal()}
     </View>
+  );
+}
+
+export default function App() {
+  return (
+    <SafeAreaProvider>
+      <AppContent />
+    </SafeAreaProvider>
   );
 }
 
 // ESTILOS CLARO TV+ FLAT UI
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#000' },
-  mainContent: { flex: 1 },
-  mainContentDesktop: { flexDirection: 'row'},
-  
-  // CABEÇALHO (HEADER)
-  desktopHeaderWrapper: { backgroundColor: '#000', paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight : 0 },
-  header: { height: 60, backgroundColor: 'transparent', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16 },
-  headerAbsolute: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    zIndex: 10,
-    paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight : 0,
-  },
-  logoContainer: { flexDirection: 'row', alignItems: 'center' },
-  brandText: { color: '#fff', fontSize: 20, fontWeight: '800', letterSpacing: -0.5 },
-  brandPlus: { color: '#E3262E', fontWeight: '900' },
-  headerActions: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  headerBtn: { padding: 8 },
+  responsiveLayout: { flex: 1, backgroundColor: '#000' },
 
-  // PLAYER
-  playerColumn: { flex: 1, backgroundColor: '#000' },
+  // SEÇÕES RESPONSIVAS
+  playerSection: { backgroundColor: '#000', zIndex: 10 },
+  epgSection: { backgroundColor: '#111' },
+
   playerContentWrapper: { position: 'relative', overflow: 'hidden', width: '100%', backgroundColor: '#000' },
   videoContainer: { ...StyleSheet.absoluteFillObject, zIndex: 0 },
   webview: { flex: 1, backgroundColor: '#000' },
@@ -1006,9 +814,9 @@ const styles = StyleSheet.create({
   tuningText: { color: '#fff', fontSize: 12, letterSpacing: 2, marginBottom: 4 },
   tuningChannel: { color: '#E3262E', fontSize: 22, fontWeight: '900', letterSpacing: 1 },
 
-  // INFO DO CANAL (ABAIXO DO PLAYER)
+  // INFO DO CANAL E AÇÕES (ABAIXO DO PLAYER)
   belowPlayerInfo: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 16, backgroundColor: '#111', borderBottomWidth: 1, borderBottomColor: '#222' },
-  bpLeft: { flexDirection: 'row', alignItems: 'center', flex: 1 },
+  bpLeft: { flexDirection: 'row', alignItems: 'center', flex: 1, flexShrink: 1 },
   bpLogoContainer: { width: 50, height: 50, borderRadius: 4, backgroundColor: '#1a1a1a', justifyContent: 'center', alignItems: 'center', padding: 4 },
   bpLogo: { width: '100%', height: '100%' },
   bpTextContainer: { marginLeft: 16, flex: 1 },
@@ -1017,13 +825,9 @@ const styles = StyleSheet.create({
   bpLiveBadge: { backgroundColor: '#E3262E', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 2, marginRight: 8 },
   bpLiveText: { color: '#fff', fontSize: 10, fontWeight: 'bold' },
   bpCategory: { color: '#999', fontSize: 12 },
-  bpAction: { padding: 8 },
+  bpActions: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  bpActionBtn: { padding: 10, backgroundColor: '#1a1a1a', borderRadius: 8 },
 
-  // EPG MOBILE / DESKTOP
-  epgMobileContainer: { flex: 1, backgroundColor: '#000' },
-  epgSidebar: { height: '100%', backgroundColor: '#111', borderColor: '#222' },
-  epgHeaderDesktop: { padding: 20, borderBottomWidth: 1, borderColor: '#222', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  epgTitleDesktop: { color: '#fff', fontSize: 18, fontWeight: 'bold' },
   epgContentWrapper: { flex: 1, backgroundColor: '#000' },
   
   // BARRA DE BUSCA
@@ -1059,39 +863,10 @@ const styles = StyleSheet.create({
   castTitle: { color: '#fff', fontSize: 20, fontWeight: 'bold', marginBottom: 8, textAlign: 'center' },
   castSubtitle: { color: '#999', fontSize: 14, textAlign: 'center' },
   
-  // MODAL DE CHROMECAST
-  modalOverlay: { ...StyleSheet.absoluteFillObject, justifyContent: 'center', alignItems: 'center', padding: 20, zIndex: 100, backgroundColor: 'rgba(0,0,0,0.8)' },
-  modalContent: { width: '100%', maxWidth: 400, borderRadius: 12, backgroundColor: '#141414', overflow: 'hidden', borderWidth: 1, borderColor: '#333' },
-  modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16, borderBottomWidth: 1, borderColor: '#222' },
-  modalTitle: { color: '#fff', fontSize: 18, fontWeight: 'bold', marginLeft: 12 },
-  closeModalBtn: { padding: 4 },
-  modalBody: { padding: 20 },
-  stopCastBtn: { borderRadius: 8, overflow: 'hidden', marginBottom: 24 },
-  stopCastContainer: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', padding: 14, gap: 10, backgroundColor: '#E3262E' },
-  stopCastText: { color: '#fff', fontWeight: 'bold', fontSize: 15 },
-  modalSectionTitle: { color: '#999', fontSize: 12, fontWeight: 'bold', textTransform: 'uppercase', marginBottom: 12 },
-  deviceBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 16, borderRadius: 8, marginBottom: 8, backgroundColor: '#1e1e1e' },
-  deviceBtnActive: { borderColor: '#E3262E', borderWidth: 1 },
-  deviceText: { color: '#ccc', fontWeight: '500', marginLeft: 14, fontSize: 16 },
-  modalFooter: { backgroundColor: '#0a0a0a', padding: 16, borderTopWidth: 1, borderColor: '#222' },
-  modalFooterText: { color: '#666', fontSize: 12, textAlign: 'center' },
-  
-  row: { flexDirection: 'row', alignItems: 'center' },
-
   // GESTOS UI
   gestureIndicatorContainer: { ...StyleSheet.absoluteFillObject, justifyContent: 'center', alignItems: 'center', zIndex: 50 },
   gestureBox: { width: 140, height: 140, borderRadius: 16, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(20,20,20,0.8)', gap: 10 },
   gestureLabel: { color: '#fff', fontSize: 12, fontWeight: 'bold' },
   gestureBarBg: { width: 80, height: 6, backgroundColor: 'rgba(255,255,255,0.2)', borderRadius: 3, overflow: 'hidden' },
   gestureBarFill: { height: '100%', backgroundColor: '#E3262E' },
-
-  // TOPO EM TELA CHEIA HORIZONTAL
-  topInfoContainer: { position: 'absolute', top: 16, left: 16, zIndex: 10 },
-  topChannelName: { color: '#fff', fontSize: 18, fontWeight: 'bold', textShadowColor: 'rgba(0,0,0,0.8)', textShadowOffset: { width: 0, height: 2 }, textShadowRadius: 4 },
-
-  // TV SPECIFIC STYLES
-  tvSidebar: { position: 'absolute', left: 0, top: 0, bottom: 0, width: 360, zIndex: 10 },
-  tvHeader: { padding: 24, paddingTop: 40 },
-  tvSubtitle: { color: '#999', fontSize: 11, fontWeight: 'bold', letterSpacing: 2, marginTop: 4 },
-  epgItemTVFocus: { borderWidth: 2, borderColor: '#E3262E', transform: [{ scale: 1.02 }] },
 });   
