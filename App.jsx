@@ -79,8 +79,15 @@ if (Platform.OS !== 'web') {
 let Audio = null;
 if (Platform.OS !== 'web') {
   try {
-    Audio = require('expo-av').Audio;
-  } catch (e) {}
+    // Usa expo-audio para substituir o expo-av depreciado
+    Audio = require('expo-audio').Audio;
+  } catch (e) {
+    // Se expo-audio não estiver instalado, tenta o fallback para expo-av
+    try {
+      Audio = require('expo-av').Audio;
+      console.warn('W3Labs: Usando fallback para "expo-av". Considere instalar "expo-audio" para compatibilidade futura.');
+    } catch (e2) {}
+  }
 }
 
 // ==========================================
@@ -114,6 +121,28 @@ const WebVideoPlayer = ({ streamUrl }) => {
   return null;
 };
 
+// ==========================================
+// CONSTANTES GLOBAIS
+// ==========================================
+const API_BASE_URL = 'https://api.reidoscanais.io';
+const CHROMECAST_RECEIVER_APP_ID = 'CC1AD845';
+
+// ==========================================
+// MÓDULOS NATIVOS SIMULADOS (para desenvolvimento)
+// ==========================================
+const MockNativeModules = {
+  VolumeManager: {
+    setVolume: (value) => {
+      console.log(`[MOCK] Volume nativo definido para: ${Math.round(value * 100)}%`);
+    }
+  },
+  Brightness: {
+    setBrightness: (value) => {
+      console.log(`[MOCK] Brilho nativo definido para: ${Math.round(value * 100)}%`);
+    }
+  }
+};
+
 // Dados Mock para Cast Visual (usados no Expo Go e Web sem API)
 const CAST_DEVICES = [
   { id: 'dev1', name: 'Smart TV Sala' },
@@ -127,12 +156,14 @@ export default function App() {
   const [isTuning, setIsTuning] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [refreshKey, setRefreshKey] = useState(0);
+  const [retryCount, setRetryCount] = useState(0);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const sidebarWidthAnim = useRef(new Animated.Value(1)).current;
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [castState, setCastState] = useState({ isCasting: false, device: null, showModal: false });
+  const [castState, setCastState] = useState({ isCasting: false, deviceName: null });
   const [isCastApiAvailable, setIsCastApiAvailable] = useState(false);
+  const [isCastModalVisible, setIsCastModalVisible] = useState(false);
   const webviewRef = useRef(null);
   const appState = useRef(AppState.currentState);
   
@@ -143,8 +174,6 @@ export default function App() {
   const volumeRef = useRef(0.5); // Ref para manter valor síncrono no PanResponder
   const brightnessRef = useRef(0.5); // Ref para manter valor síncrono no PanResponder
   const hideGestureTimeout = useRef(null);
-
-  const receiverAppId = 'CC1AD845';
 
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const tuningAnim = useRef(new Animated.Value(1)).current;
@@ -191,11 +220,15 @@ export default function App() {
         if (isVolume) {
           volumeRef.current = newValue;
           setVolume(newValue);
-          // Aqui você injetaria: NativeModules.VolumeManager.setVolume(newValue);
+          if (Platform.OS !== 'web') {
+            MockNativeModules.VolumeManager.setVolume(newValue);
+          }
         } else {
           brightnessRef.current = newValue;
           setBrightness(newValue);
-          // Aqui você injetaria: NativeModules.Brightness.setBrightness(newValue);
+          if (Platform.OS !== 'web') {
+            MockNativeModules.Brightness.setBrightness(newValue);
+          }
         }
 
         setGestureState({ visible: true, icon: isVolume ? 'volume' : 'brightness', value: newValue, label: isVolume ? 'VOLUME' : 'BRILHO' });
@@ -271,141 +304,122 @@ export default function App() {
   // LÓGICA DE CHROMECAST (WEB & NATIVE)
   // ==========================================
   useEffect(() => {
+    // Inicialização para Web
     if (Platform.OS === 'web') {
-      if (document.getElementById('chromecast-sdk')) {
-        if (window.cast && window.cast.framework) setIsCastApiAvailable(true);
-        return;
-      }
+      if (document.getElementById('chromecast-sdk')) return;
+
       const script = document.createElement('script');
       script.id = 'chromecast-sdk';
       script.src = 'https://www.gstatic.com/cv/js/sender/v1/cast_sender.js?loadCastFramework=1';
       script.async = true;
       document.body.appendChild(script);
 
-      window['__onGCastApiAvailable'] = (isAvailable) => {
+      window.__onGCastApiAvailable = (isAvailable) => {
         if (isAvailable) {
           try {
             const castContext = window.cast.framework.CastContext.getInstance();
             castContext.setOptions({
-              receiverApplicationId: receiverAppId,
+              receiverApplicationId: CHROMECAST_RECEIVER_APP_ID,
               autoJoinPolicy: window.chrome.cast.AutoJoinPolicy.ORIGIN_SCOPED,
             });
             setIsCastApiAvailable(true);
           } catch (e) {
-            console.error('Erro no Chromecast SDK:', e);
+            console.error('W3Labs: Falha ao inicializar o Chromecast SDK na Web.', e);
           }
         }
       };
-    } else if (GoogleCast) {
-      setIsCastApiAvailable(true);
-      
-      try {
-        const sessionManager = GoogleCast.getSessionManager();
-        if (!sessionManager) return;
-
-        const sessionStartedListener = sessionManager.onSessionStarted((session) => {
-          setCastState({ isCasting: true, device: { name: 'TV Conectada' }, showModal: false });
-        });
-
-        const sessionEndedListener = sessionManager.onSessionEnded(() => {
-          setCastState({ isCasting: false, device: null, showModal: false });
-        });
-
-        const sessionResumedListener = sessionManager.onSessionResumed((session) => {
-          setCastState({ isCasting: true, device: { name: 'TV Conectada' }, showModal: false });
-        });
-
-        return () => {
-          sessionStartedListener.remove();
-          sessionEndedListener.remove();
-          if (sessionResumedListener) sessionResumedListener.remove();
-        };
-      } catch (err) {
-        console.warn("Erro ao registrar listeners de cast:", err);
-      }
     }
-  }, [receiverAppId]);
+    // Inicialização para Nativo
+    else if (GoogleCast) {
+      setIsCastApiAvailable(true);
 
+      const sessionManager = GoogleCast.getSessionManager();
+      if (!sessionManager) return;
+
+      const updateCastState = () => {
+        sessionManager.getCurrentCastSession().then(session => {
+          if (session) {
+            const deviceName = session.getCastDevice()?.friendlyName || 'Dispositivo Conectado';
+            setCastState({ isCasting: true, deviceName });
+          } else {
+            setCastState({ isCasting: false, deviceName: null });
+          }
+        });
+      };
+
+      const listeners = [
+        sessionManager.onSessionStarted(updateCastState),
+        sessionManager.onSessionEnded(() => setCastState({ isCasting: false, deviceName: null })),
+        sessionManager.onSessionResumed(updateCastState),
+      ];
+
+      updateCastState(); // Check initial state
+
+      return () => listeners.forEach(listener => listener.remove());
+    }
+  }, []);
+
+  // Listener de estado do Cast para Web
   useEffect(() => {
-    if (!isCastApiAvailable || Platform.OS !== 'web') return;
+    if (Platform.OS !== 'web' || !isCastApiAvailable) return;
+
     const castContext = window.cast.framework.CastContext.getInstance();
-    const handleCastStateChange = (event) => {
-      const state = event.castState;
-      if (state === 'CONNECTED') {
-        const session = castContext.getCurrentSession();
-        setCastState({ isCasting: true, device: { name: session.getCastDevice().friendlyName }, showModal: false });
-      } else if (state === 'NOT_CONNECTED' || state === 'NO_DEVICES_AVAILABLE') {
-        setCastState({ isCasting: false, device: null, showModal: false });
-      }
+    const listener = (event) => {
+      const session = castContext.getCurrentSession();
+      setCastState({
+        isCasting: event.castState === 'CONNECTED',
+        deviceName: session ? session.getCastDevice().friendlyName : null,
+      });
     };
-    castContext.addEventListener(cast.framework.CastContextEventType.CAST_STATE_CHANGED, handleCastStateChange);
-    return () => castContext.removeEventListener(cast.framework.CastContextEventType.CAST_STATE_CHANGED, handleCastStateChange);
+
+    castContext.addEventListener(cast.framework.CastContextEventType.CAST_STATE_CHANGED, listener);
+    return () => castContext.removeEventListener(cast.framework.CastContextEventType.CAST_STATE_CHANGED, listener);
   }, [isCastApiAvailable]);
 
-  // Sincronizar Mídia com Chromecast
+  // Efeito para carregar mídia no Chromecast quando o canal ou estado de cast muda
   useEffect(() => {
     if (!isCastApiAvailable || !castState.isCasting || !activeItem) return;
 
     if (Platform.OS === 'web') {
       const session = window.cast.framework.CastContext.getInstance().getCurrentSession();
       if (!session) return;
+
       const mediaInfo = new window.chrome.cast.media.MediaInfo(activeItem.streamUrl, 'application/x-mpegURL');
       mediaInfo.metadata = new window.chrome.cast.media.GenericMediaMetadata();
       mediaInfo.metadata.title = activeItem.name;
       mediaInfo.metadata.images = [{ url: activeItem.image }];
+
       const request = new window.chrome.cast.media.LoadRequest(mediaInfo);
-      session.loadMedia(request).catch(e => console.error('Erro ao carregar web cast', e));
+      session.loadMedia(request).catch(e => console.error('W3Labs: Erro ao carregar mídia no Chromecast (Web).', e));
     } else if (GoogleCast) {
-      try {
-        GoogleCast.getSessionManager().getCurrentCastSession()
-          .then(session => {
-            const client = session?.client || session?.remoteMediaClient;
-            if (client) {
-              client.loadMedia({
-                mediaInfo: {
-                  contentUrl: activeItem.streamUrl,
-                  contentType: 'application/x-mpegURL',
-                  metadata: { type: 'movie', title: activeItem.name, images: [{ url: activeItem.image }] },
-                }
-              }).catch(e => console.error('Erro ao carregar native cast', e));
-            }
-          })
-          .catch(e => console.error('Erro ao obter sessão de cast', e));
-      } catch (err) {
-        console.warn("Falha ao usar getCurrentCastSession", err);
-      }
+      GoogleCast.castMedia({
+        mediaInfo: {
+          contentUrl: activeItem.streamUrl,
+          contentType: 'application/x-mpegURL',
+          metadata: { type: 'movie', title: activeItem.name, images: [{ url: activeItem.image }] },
+        }
+      }).catch(e => console.error('W3Labs: Erro ao carregar mídia no Chromecast (Nativo).', e));
     }
   }, [castState.isCasting, activeItem, isCastApiAvailable]);
 
   const handleCastAction = () => {
     if (!isCastApiAvailable) {
-      // Se não há API de Cast (ex: Expo Go), abre o modal visual
-      setCastState(prev => ({ ...prev, showModal: true }));
+      setIsCastModalVisible(true); // Abre o modal de simulação no Expo Go
     } else if (Platform.OS === 'web') {
-      window.cast.framework.CastContext.getInstance().requestSession().catch(e => console.error('Cast Error', e));
-    } else if (CastContext) {
-      try {
-        CastContext.showCastDialog();
-      } catch(e) {
-        if (GoogleCast?.showCastPicker) GoogleCast.showCastPicker();
-      }
+      window.cast.framework.CastContext.getInstance().requestSession().catch(e => console.error('W3Labs: Erro ao solicitar sessão de cast (Web).', e));
     } else if (GoogleCast) {
-      if (GoogleCast.showCastPicker) GoogleCast.showCastPicker();
+      GoogleCast.showCastDialog().catch(e => console.error('W3Labs: Erro ao exibir diálogo de cast (Nativo).', e));
     }
   };
 
   const handleStopCast = () => {
     if (!isCastApiAvailable) {
-      setCastState({ isCasting: false, device: null, showModal: false });
+      setCastState({ isCasting: false, deviceName: null });
+      setIsCastModalVisible(false);
     } else if (Platform.OS === 'web') {
-      const session = window.cast.framework.CastContext.getInstance().getCurrentSession();
-      if (session) session.stop();
+      window.cast.framework.CastContext.getInstance().endCurrentSession(true);
     } else if (GoogleCast) {
-      try {
-        GoogleCast.getSessionManager().endCurrentSession(true);
-      } catch (e) {
-         setCastState({ isCasting: false, device: null, showModal: false });
-      }
+      GoogleCast.endSession().catch(e => console.error('W3Labs: Erro ao encerrar sessão de cast (Nativo).', e));
     }
   };
 
@@ -414,56 +428,70 @@ export default function App() {
   // ==========================================
   useEffect(() => {
     const fetchMedia = async () => {
-      setIsLoading(true);
+      // Mantém o loading ativo durante as tentativas, mas não para a busca (que já tem seu próprio debounce)
+      if (retryCount === 0) {
+        setIsLoading(true);
+      }
       setError(null);
+
       try {
-        const endpoint = searchQuery.trim()
-          ? `https://api.reidoscanais.io/search?q=${encodeURIComponent(searchQuery)}`
-          : `https://api.reidoscanais.io/channels`;
+        const endpoint = searchQuery.trim() ?
+          `${API_BASE_URL}/search?q=${encodeURIComponent(searchQuery)}` :
+          `${API_BASE_URL}/channels`;
 
         const response = await fetch(endpoint);
-        if (!response.ok) throw new Error('Falha na comunicação.');
+        if (!response.ok) throw new Error('Falha na comunicação com o servidor.');
         const json = await response.json();
-        if (!json.success) throw new Error('Sem dados na API.');
+        if (!json.success || !json.data) throw new Error('A API retornou uma resposta inválida.');
 
         let parsedItems = [];
         const data = json.data;
-        if (data) {
-          const channels = Array.isArray(data) ? data : (data.channels || []);
-          const events = data.events || [];
+        const channels = Array.isArray(data) ? data : (data.channels || []);
+        const events = data.events || [];
 
-          parsedItems = [
-            ...channels.map(c => ({
-              id: c.id,
-              name: c.name,
-              category: c.category || 'TV',
-              image: c.logo,
-              streamUrl: c.streamUrl || c.embed_url || c.url || `https://reidoscanais.io/embed/player.php?id=${c.id}`,
-              type: 'channel',
-              signal: Math.floor(Math.random() * 20) + 80
-            })),
-            ...events.map(e => ({
-              id: e.id,
-              name: e.title,
-              category: e.category || 'Evento',
-              image: e.poster,
-              streamUrl: e.embeds?.[0]?.embed_url || `https://reidoscanais.io/embed/player.php?id=${e.id}`,
-              type: 'event',
-              signal: Math.floor(Math.random() * 20) + 80
-            }))
-          ];
-        }
+        parsedItems = [
+          ...channels.map(c => ({
+            id: c.id,
+            name: c.name,
+            category: c.category || 'TV',
+            image: c.logo,
+            streamUrl: c.streamUrl || c.embed_url || c.url || `https://reidoscanais.io/embed/player.php?id=${c.id}`,
+            type: 'channel',
+            signal: Math.floor(Math.random() * 20) + 80
+          })),
+          ...events.map(e => ({
+            id: e.id,
+            name: e.title,
+            category: e.category || 'Evento',
+            image: e.poster,
+            streamUrl: e.embeds?.[0]?.embed_url || `https://reidoscanais.io/embed/player.php?id=${e.id}`,
+            type: 'event',
+            signal: Math.floor(Math.random() * 20) + 80
+          }))
+        ];
+        
         setItems(parsedItems);
-        if (!activeItem && parsedItems.length > 0) tuneChannel(parsedItems[0]);
+        // Sintoniza o primeiro canal se não houver um ativo ou se a sintonia for resultado de uma nova tentativa
+        if ((!activeItem && parsedItems.length > 0) || (retryCount > 0 && parsedItems.length > 0)) {
+          tuneChannel(parsedItems[0]);
+        }
+        setRetryCount(0); // Reseta a contagem em caso de sucesso
+        setIsLoading(false); // Para o loading apenas em caso de sucesso
       } catch (err) {
-        setError('Sinal indisponível. Conectando a servidores alternativos...');
-      } finally {
-        setIsLoading(false);
+        const nextRetry = retryCount + 1;
+        if (nextRetry <= 3) {
+          setError(`Sinal indisponível. Tentando reconectar... (${nextRetry}/3)`);
+          setTimeout(() => setRetryCount(nextRetry), 3000); // Tenta novamente em 3 segundos
+        } else {
+          setError('Falha na conexão. Verifique sua internet e tente atualizar a lista manualmente.');
+          setIsLoading(false); // Para o loading após todas as tentativas falharem
+        }
       }
     };
-    const delay = setTimeout(fetchMedia, 500);
+    const debounceTime = searchQuery.trim().length > 0 ? 500 : 0;
+    const delay = setTimeout(fetchMedia, debounceTime);
     return () => clearTimeout(delay);
-  }, [searchQuery, refreshKey]);
+  }, [searchQuery, refreshKey, retryCount]);
 
   // ==========================================
   // CONTROLE DE MÍDIA NA TELA DE BLOQUEIO (MEDIA SESSION API)
@@ -514,7 +542,7 @@ export default function App() {
   }, [activeItem]);
 
   // Lógica de Sintonização (Efeito Estático)
-  const tuneChannel = (item) => {
+  const tuneChannel = useCallback((item) => {
     if (activeItem?.id === item.id) return;
     setIsTuning(true);
     setActiveItem(item);
@@ -530,7 +558,7 @@ export default function App() {
       setIsTuning(false);
       tuningAnim.setValue(1);
     }, item.signal > 80 ? 600 : 1200);
-  };
+  }, [activeItem?.id]);
 
   // ==========================================
   // FORÇAR PICTURE-IN-PICTURE MANUALMENTE
@@ -589,14 +617,30 @@ export default function App() {
         </View>
       </TouchableOpacity>
     );
-  }, [activeItem, pulseAnim, tuningAnim]);
+  }, [activeItem, tuneChannel]);
 
   const keyExtractor = useCallback((item) => item.id.toString(), []);
 
   const EpgContent = useCallback(() => (
     <View style={styles.epgContentWrapper}>
+      <View style={styles.searchBarContainer}>
+        <View style={styles.searchInputWrapper}>
+          <Search size={20} color="#888" style={{ marginLeft: 12 }}/>
+          <TextInput
+            style={styles.searchInput}
+            placeholder="Buscar canal ou evento"
+            placeholderTextColor="#888"
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+          />
+        </View>
+      </View>
+
       <View style={styles.refreshContainer}>
-        <TouchableOpacity style={styles.refreshButton} onPress={() => setRefreshKey(prev => prev + 1)}>
+        <TouchableOpacity style={styles.refreshButton} onPress={() => {
+          setRetryCount(0);
+          setRefreshKey(prev => prev + 1);
+        }}>
           <RefreshCw size={18} color="#ccc" />
           <Text style={styles.refreshText}>Atualizar Lista</Text>
         </TouchableOpacity>
@@ -627,7 +671,7 @@ export default function App() {
         }
       />
     </View>
-  ), [isLoading, error, items, activeItem, renderEpgItem]);
+  ), [isLoading, error, items, activeItem, renderEpgItem, searchQuery]);
 
   // ==========================================
   // FRAGMENTOS DE UI
@@ -691,7 +735,7 @@ export default function App() {
                 <Smartphone size={width > 600 ? 30 : 20} color="#fff" />
               </View>
             </Animated.View>
-            <Text style={styles.castTitle}>Conectado: {castState.device?.name}</Text>
+            <Text style={styles.castTitle}>Conectado: {castState.deviceName}</Text>
             <Text style={styles.castSubtitle}>Exibindo <Text style={{ color: '#fff', fontWeight: 'bold' }}>{activeItem.name}</Text></Text>
           </View>
         ) : !isTuning && WebView ? (
@@ -747,7 +791,7 @@ export default function App() {
   );
 
   const renderCastModal = () => (
-    castState.showModal && Platform.OS !== 'web' ? (
+    isCastModalVisible && !isCastApiAvailable ? (
       <View style={styles.modalOverlay}>
         <View style={styles.modalContent}>
           <View style={styles.modalHeader}>
@@ -755,7 +799,7 @@ export default function App() {
               <Cast size={20} color="#fff" />
               <Text style={styles.modalTitle}>Transmitir Tela</Text>
             </View>
-            <TouchableOpacity onPress={() => setCastState(prev => ({ ...prev, showModal: false }))} style={styles.closeModalBtn}>
+            <TouchableOpacity onPress={() => setIsCastModalVisible(false)} style={styles.closeModalBtn}>
               <X size={24} color="#999" />
             </TouchableOpacity>
           </View>
@@ -770,9 +814,12 @@ export default function App() {
             )}
             <Text style={styles.modalSectionTitle}>Dispositivos Encontrados</Text>
             {CAST_DEVICES.map(device => {
-              const isActive = castState.device?.id === device.id;
+              const isActive = castState.isCasting && castState.deviceName === device.name;
               return (
-                <TouchableOpacity key={device.id} activeOpacity={0.7} onPress={() => setCastState({ isCasting: true, device, showModal: false })}>
+                <TouchableOpacity key={device.id} activeOpacity={0.7} onPress={() => {
+                  setCastState({ isCasting: true, deviceName: device.name });
+                  setIsCastModalVisible(false);
+                }}>
                   <View style={[styles.deviceBtn, isActive && styles.deviceBtnActive]}>
                     <View style={styles.row}><Tv size={20} color={isActive ? "#E3262E" : "#999"} /><Text style={[styles.deviceText, isActive && { color: '#fff', fontWeight: 'bold' }]}>{device.name}</Text></View>
                     {isActive ? <SignalHigh size={18} color="#E3262E" /> : <ChevronUp size={16} color="#333" style={{transform: [{rotate: '90deg'}]}} />}
@@ -929,6 +976,11 @@ const styles = StyleSheet.create({
   epgHeaderDesktop: { padding: 20, borderBottomWidth: 1, borderColor: '#222', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   epgTitleDesktop: { color: '#fff', fontSize: 18, fontWeight: 'bold' },
   epgContentWrapper: { flex: 1, backgroundColor: '#000' },
+  
+  // BARRA DE BUSCA
+  searchBarContainer: { padding: 16, backgroundColor: '#000', borderBottomWidth: 1, borderColor: '#222' },
+  searchInputWrapper: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#1A1A1A', borderRadius: 8, height: 44 },
+  searchInput: { flex: 1, height: '100%', paddingHorizontal: 12, color: '#fff', fontSize: 15 },
   
   // ATUALIZAR LISTA
   refreshContainer: { padding: 16, backgroundColor: '#000', borderBottomWidth: 1, borderColor: '#222' },
