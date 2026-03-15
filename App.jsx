@@ -1,9 +1,13 @@
 import {
   AlertTriangle,
   Cast,
+  ChevronDown,
   ExternalLink,
+  Menu,
   MonitorPlay,
+  Pause,
   PictureInPicture,
+  Play,
   PlayCircle,
   RefreshCw,
   Search,
@@ -11,49 +15,48 @@ import {
   Sun,
   Tv,
   Volume2,
+  VolumeX,
 } from 'lucide-react-native';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  AppState,
   ActivityIndicator,
   Animated,
+  AppState,
   FlatList,
   Image,
   Linking,
-  NativeModules,
   PanResponder,
   Platform,
-  ScrollView,
   StatusBar,
   StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
   useWindowDimensions,
-  View,
+  View
 } from 'react-native';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { LinearGradient } from 'expo-linear-gradient';
 
-// ==========================================
-// MÓDULOS CROSS-PLATFORM SEGUROS (Evita crash no Expo Go)
-// ==========================================
-let GoogleCast = null;
-let CastContext = null;
-if (Platform.OS !== 'web') {
-  try {
-    // A biblioteca react-native-google-cast quebra no momento do "require" 
-    // se o módulo nativo não estiver compilado (ex: rodando no Expo Go padrão).
-    // Verificando o NativeModules, evitamos o erro "SESSION_STARTED of null".
-    if (NativeModules.RNGoogleCast) {
-      const gcast = require('react-native-google-cast');
-      GoogleCast = gcast.default;
-      CastContext = gcast.CastContext;
-    } else {
-      console.warn('W3Labs: Google Cast ignorado. Módulo nativo ausente (rodando no Expo Go). Usando interface Mock para testes.');
-    }
-  } catch (e) {
-    console.warn('GoogleCast falhou ao carregar:', e.message);
-  }
+let CastButton, useCastDevice, useCastState, useRemoteMediaClient;
+
+try {
+  // This will fail on web and in environments without the native module (like Expo Go),
+  // falling back to the mock implementation in the catch block.
+  const Gcast = require('react-native-google-cast');
+  CastButton = Gcast.CastButton;
+  useCastDevice = Gcast.useCastDevice;
+  useCastState = Gcast.useCastState;
+  useRemoteMediaClient = Gcast.useRemoteMediaClient;
+} catch (e) {
+  // Mock implementations for web and other environments
+  const { View } = require('react-native');
+  console.warn('W3Labs: react-native-google-cast not available. Using mock implementation.');
+
+  CastButton = (props) => <View {...props} />; // Render a simple View as a placeholder
+  useCastDevice = () => null;
+  useCastState = () => 'noDevicesAvailable';
+  useRemoteMediaClient = () => null;
 }
 
 let WebView = null;
@@ -106,7 +109,6 @@ const WebVideoPlayer = ({ streamUrl }) => {
       src: streamUrl,
       style: { width: '100%', height: '100%', border: 'none', backgroundColor: '#000', display: 'block' },
       allow: 'autoplay; encrypted-media; picture-in-picture; fullscreen',
-      allowFullScreen: true,
       title: 'W3Labs Premium Player',
     });
   }
@@ -116,8 +118,139 @@ const WebVideoPlayer = ({ streamUrl }) => {
 // ==========================================
 // CONSTANTES GLOBAIS
 // ==========================================
-const API_BASE_URL = 'https://api.reidoscanais.io';
+const API_BASE_URL = 'https://api.reidoscanais.ooo';
 const CHROMECAST_RECEIVER_APP_ID = 'CC1AD845';
+
+const channelLogos = {
+  'a&e': require('./assets/brazil/a-and-e-br.png'),
+  'agro mais': require('./assets/brazil/agro-mais-br.png'),
+  'arte 1': require('./assets/brazil/arte1-br.png'),
+  'axn': require('./assets/brazil/axn-br.png'),
+  'band': require('./assets/brazil/band-br.png'),
+  'band internacional': require('./assets/brazil/band-internacional-br.png'),
+  'band news': require('./assets/brazil/band-news-br.png'),
+  'band sports': require('./assets/brazil/band-sports-br.png'),
+  'bis': require('./assets/brazil/bis-br.png'),
+  'box kids': require('./assets/brazil/box-kids-tv-br.png'),
+  'canal brasil': require('./assets/brazil/canal-brasil-br.png'),
+  'canal empreender': require('./assets/brazil/canal-empreender-br.png'),
+  'canal gov': require('./assets/brazil/canal-gov-br.png'),
+  'canal off': require('./assets/brazil/canal-off-br.png'),
+  'canal rural': require('./assets/brazil/canal-rural-br.png'),
+  'canção nova': require('./assets/brazil/cancao-nova-tv-br.png'),
+  'cartoon network': require('./assets/brazil/cartoon-network-br.png'),
+  'cartoonito': require('./assets/brazil/cartoonito-br.png'),
+  'cinecanal': require('./assets/brazil/cine-canal-br.png'),
+  'cinemax': require('./assets/brazil/cinemax-br.png'),
+  'cnn brasil': require('./assets/brazil/cnn-brasil-br.png'),
+  'cnn money': require('./assets/brazil/cnn-brasil-money-br.png'),
+  'cnt': require('./assets/brazil/rede-cnt-br.png'),
+  'discovery kids': require('./assets/brazil/discovery-kids-br.png'),
+  'discovery turbo': require('./assets/brazil/discovery-turbo-br.png'),
+  'dreamworks': require('./assets/brazil/dreamworks-channel-br.png'),
+  'dumdum': require('./assets/brazil/dumdum-br.png'),
+  'espn': require('./assets/brazil/espn-4-br.png'), // Genérico para todos os canais ESPN
+  'fish tv': require('./assets/brazil/fish-tv-br.png'),
+  'fox sports 2': require('./assets/brazil/fox-sports-2-br.png'),
+  'futura': require('./assets/brazil/futura-br.png'),
+  'ge tv': require('./assets/brazil/ge-tv-br.png'),
+  'globo': require('./assets/brazil/globo-br.png'),
+  'globo news': require('./assets/brazil/globo-news-br.png'),
+  'globoplay novelas': require('./assets/brazil/globoplay-novelas-br.png'),
+  'gloob': require('./assets/brazil/gloob-br.png'),
+  'gloobinho': require('./assets/brazil/gloobinho-br.png'),
+  'gnt': require('./assets/brazil/gnt-br.png'),
+  'hbo': require('./assets/brazil/hbo-br.png'),
+  'hbo 2': require('./assets/brazil/hbo-2-br.png'),
+  'hbo family': require('./assets/brazil/hbo-family-br.png'),
+  'hbo mundi': require('./assets/brazil/hbo-mundi-br.png'),
+  'hbo pack': require('./assets/brazil/hbo-pack-br.png'),
+  'hbo plus': require('./assets/brazil/hbo-plus-br.png'),
+  'hbo pop': require('./assets/brazil/hbo-pop-br.png'),
+  'hbo signature': require('./assets/brazil/hbo-signature-br.png'),
+  'hbo xtreme': require('./assets/brazil/hbo-xtreme-br.png'),
+  'ideal tv': require('./assets/brazil/ideal-tv-br.png'),
+  'inter tv': require('./assets/brazil/globo-br.png'), // Afiliada Globo
+  'jovem pan': require('./assets/brazil/jovem-pan-tv-br.png'),
+  'jovem pan news': require('./assets/brazil/jovem-pan-news-br.png'),
+  'megapix': require('./assets/brazil/megapix-br.png'),
+  'modo viagem': require('./assets/brazil/modo-viagem-br.png'),
+  'multishow': require('./assets/brazil/multishow-br.png'),
+  'novo tempo': require('./assets/brazil/novo-tempo-br.png'),
+  'paramount': require('./assets/brazil/paramount-network-br.png'),
+  'playtv': require('./assets/brazil/play-tv-br.png'),
+  'polishop': require('./assets/brazil/polishop-br.png'),
+  'premiere': require('./assets/brazil/premiere-br.png'),
+  'prime box brazil': require('./assets/brazil/prime-box-brazil-br.png'),
+  'rá tim bum': require('./assets/brazil/tv-ra-tim-bum-br.png'),
+  'rbi': require('./assets/brazil/rbi-br.png'),
+  'rbtv': require('./assets/brazil/rbtv-br.png'),
+  'record': require('./assets/brazil/record-br.png'),
+  'record news': require('./assets/brazil/record-news-br.png'),
+  'rede 21': require('./assets/brazil/rede-21-br.png'),
+  'rede gospel': require('./assets/brazil/rede-gospel-br.png'),
+  'rede record': require('./assets/brazil/rede-record-br.png'),
+  'redetv!': require('./assets/brazil/rede-tv-br.png'),
+  'rede vida': require('./assets/brazil/rede-vida-br.png'),
+  'ric record': require('./assets/brazil/ric-record-br.png'),
+  'rit': require('./assets/brazil/rit-br.png'),
+  'sabor & arte': require('./assets/brazil/sabor-and-arte-br.png'),
+  'sbt': require('./assets/brazil/sbt-br.png'),
+  'sbt news': require('./assets/brazil/sbt-news-br.png'),
+  'sexprive': require('./assets/brazil/sexprive-br.png'),
+  'sexy hot': require('./assets/brazil/sexy-hot-br.png'),
+  'shoptime': require('./assets/brazil/shoptime-br.png'),
+  'sony channel': require('./assets/brazil/sony-channel-br.png'),
+  'sony movies': require('./assets/brazil/sony-movies-br.png'),
+  'space': require('./assets/brazil/space-br.png'),
+  'sportv': require('./assets/brazil/sportv-br.png'), // Genérico para todos os canais SporTV
+  'star channel': require('./assets/brazil/star-channel-br.png'),
+  'studio universal': require('./assets/brazil/studio-universal-br.png'),
+  'tcm': require('./assets/brazil/tcm-br.png'),
+  'telecine action': require('./assets/brazil/tele-cine-action-br.png'),
+  'telecine cult': require('./assets/brazil/tele-cine-cult-br.png'),
+  'telecine fun': require('./assets/brazil/tele-cine-fun-br.png'),
+  'telecine pipoca': require('./assets/brazil/tele-cine-pipoca-br.png'),
+  'telecine premium': require('./assets/brazil/tele-cine-premium-br.png'),
+  'telecine touch': require('./assets/brazil/tele-cine-touch-br.png'),
+  'terraviva': require('./assets/brazil/terraviva-br.png'),
+  'times brasil': require('./assets/brazil/times-brasil-cnbc-br.png'),
+  'tnt': require('./assets/brazil/tnt-br.png'),
+  'tnt series': require('./assets/brazil/tnt-series-br.png'),
+  'tooncast': require('./assets/brazil/tooncast-br.png'),
+  'trace brasil': require('./assets/brazil/trace-brasil-br.png'),
+  'tv aparecida': require('./assets/brazil/tv-aparecida-br.png'),
+  'tv bahia': require('./assets/brazil/globo-br.png'), // Afiliada Globo
+  'tv brasil': require('./assets/brazil/tv-brasil-br.png'),
+  'tv câmara': require('./assets/brazil/tv-camara-br.png'),
+  'tv cultura': require('./assets/brazil/tv-cultura-br.png'),
+  'tv escola': require('./assets/brazil/tv-escola-br.png'),
+  'tv meio': require('./assets/brazil/tv-meio-br.png'),
+  'tv pai eterno': require('./assets/brazil/tv-pai-eterno-br.png'),
+  'tv senado': require('./assets/brazil/tv-senado-br.png'),
+  'tv sim': require('./assets/brazil/tv-sim-br.png'),
+  'universal': require('./assets/brazil/universal-tv-br.png'),
+  'usa': require('./assets/brazil/usa-br.png'),
+  'venus': require('./assets/brazil/venus-br.png'),
+  'warner': require('./assets/brazil/warner-channel-br.png'),
+  'woohoo': require('./assets/brazil/woohoo-br.png'),
+  'x sports': require('./assets/brazil/x-sports-br.png'),
+  'zoomoo': require('./assets/brazil/zoomoo-br.png'),
+};
+
+const sortedLogoKeys = Object.keys(channelLogos).sort((a, b) => b.length - a.length);
+
+const findLogo = (name) => {
+  if (!name) return null;
+  const lowerCaseName = name.toLowerCase();
+
+  for (const key of sortedLogoKeys) {
+    if (lowerCaseName.includes(key)) {
+      return channelLogos[key];
+    }
+  }
+  return null;
+};
 
 const AppContent = () => {
   const [items, setItems] = useState([]);
@@ -128,8 +261,26 @@ const AppContent = () => {
   const [retryCount, setRetryCount] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [castState, setCastState] = useState({ isCasting: false, deviceName: null });
-  const [isCastApiAvailable, setIsCastApiAvailable] = useState(false);
+  const [isEpgVisible, setIsEpgVisible] = useState(true);
+  const [areControlsVisible, setAreControlsVisible] = useState(true);
+  const [isPaused, setIsPaused] = useState(false);
+  const [isMuted, setIsMuted] = useState(false);
+  const [allItems, setAllItems] = useState([]);
+  const [categories, setCategories] = useState(['Todos']);
+  const [selectedCategory, setSelectedCategory] = useState('Todos');
+  const [isCategoryDropdownVisible, setIsCategoryDropdownVisible] = useState(false);
+
+  // Hooks para Chromecast (Nativo)
+  const nativeCastState = Platform.OS !== 'web' ? useCastState() : null;
+  const client = Platform.OS !== 'web' ? useRemoteMediaClient() : null;
+  const nativeCastDevice = Platform.OS !== 'web' ? useCastDevice() : null;
+
+  // Estado para Chromecast (Web)
+  const [isWebCastApiAvailable, setIsWebCastApiAvailable] = useState(false);
+  const [webCastState, setWebCastState] = useState({ isCasting: false, deviceName: null });
+
+  const isCasting = Platform.OS === 'web' ? webCastState.isCasting : nativeCastState === 'connected';
+  const castDeviceName = Platform.OS === 'web' ? webCastState.deviceName : nativeCastDevice?.friendlyName;
   const webviewRef = useRef(null);
   const appState = useRef(AppState.currentState);
   
@@ -140,29 +291,68 @@ const AppContent = () => {
   const volumeRef = useRef(0.5); // Ref para manter valor síncrono no PanResponder
   const brightnessRef = useRef(0.5); // Ref para manter valor síncrono no PanResponder
   const hideGestureTimeout = useRef(null);
+  const hideControlsTimeout = useRef(null);
+  const lastVolume = useRef(volume);
 
-  // Script para bloquear anúncios dentro do WebView
+  // Script aprimorado para bloquear anúncios e pop-ups dentro do WebView
   const adBlockerJs = `
     (function() {
+      // Lista mais abrangente de seletores de anúncios
       const adSelectors = [
-        'iframe[src*="ads"]', 'iframe[src*="adserver"]', '[id*="google_ads"]',
-        '[id*="ad_"]', '[class*="ad-"]', '[class*="advert"]', '.ad', '.ads',
-        '.advertisement', '.ad-banner', '.ad-container', '.ad-wrapper',
-        '.ad-slot', '.ad-box', '.google-ad', 'div[data-ad-id]'
+        // Seletores comuns
+        '.ad', '.ads', '.advert', '.advertisement', '.ad-banner', '.ad-container',
+        '.ad-wrapper', '.ad-slot', '.ad-box', '.google-ad',
+        // Seletores de ID e classe com substrings comuns
+        '[id*="ad"]', '[class*="ad"]', '[id*="google_ads"]', '[id*="banner"]',
+        '[class*="banner"]', '[id*="publicidade"]', '[class*="publicidade"]',
+        '[id*="propaganda"]', '[class*="propaganda"]',
+        // Seletores de provedores específicos
+        '#ad-unit', '.ad-unit', 'div[data-ad-id]', 'div[data-ad-unit]',
+        'iframe[src*="ads"]', 'iframe[src*="adserver"]', 'iframe[src*="doubleclick.net"]',
+        'iframe[src*="googlesyndication.com"]',
+        // Outros padrões
+        'a[href*="/ads/"]', 'a[href*="?ad="]'
       ];
 
-      const removeNode = (node) => {
-        if (node && node.parentNode) {
-          node.parentNode.removeChild(node);
+      const hideNode = (node) => {
+        if (node) {
+          node.style.setProperty('display', 'none', 'important');
+          node.style.setProperty('visibility', 'hidden', 'important');
+          node.style.setProperty('width', '0px', 'important');
+          node.style.setProperty('height', '0px', 'important');
         }
       };
 
       const cleanDOM = () => {
-        adSelectors.forEach(selector => { try { document.querySelectorAll(selector).forEach(removeNode); } catch (e) {} });
+        adSelectors.forEach(selector => {
+          try {
+            document.querySelectorAll(selector).forEach(hideNode);
+          } catch (e) {
+            // Ignora erros de seletores inválidos em alguns contextos
+          }
+        });
       };
 
-      window.open = () => null; // Bloqueia pop-ups
-      setInterval(cleanDOM, 500); // Roda a limpeza em intervalos para pegar anúncios dinâmicos
+      // Bloqueia a abertura de novas janelas (pop-ups)
+      window.open = () => null;
+
+      // Observador para mudanças no DOM (anúncios carregados dinamicamente)
+      const observer = new MutationObserver((mutations) => {
+        let needsCleaning = false;
+        for (const mutation of mutations) {
+          if (mutation.addedNodes.length > 0) {
+            needsCleaning = true;
+            break;
+          }
+        }
+        if (needsCleaning) {
+          cleanDOM();
+        }
+      });
+
+      // Limpeza inicial e configuração do observador
+      cleanDOM();
+      observer.observe(document.body, { childList: true, subtree: true });
     })();
     true; // Retorno para injectJavaScript
   `;
@@ -179,12 +369,71 @@ const AppContent = () => {
   const widthRef = useRef(width);
   useEffect(() => { widthRef.current = width; }, [width]);
 
+  // Script inteligente para entrar em modo Picture-in-Picture
+  const enterPiPScript = `
+    (function() {
+      try {
+        const videos = Array.from(document.getElementsByTagName('video'));
+        if (videos.length === 0) return;
+
+        // Encontra o maior vídeo visível na tela
+        let largestVideo = videos
+          .filter(v => v.offsetWidth > 0 && v.offsetHeight > 0 && v.src)
+          .sort((a, b) => (b.offsetWidth * b.offsetHeight) - (a.offsetWidth * a.offsetHeight))[0];
+
+        // Se nenhum vídeo grande for encontrado, pega o primeiro que tiver uma fonte
+        if (!largestVideo) {
+          largestVideo = videos.find(v => v.src);
+        }
+        
+        // Se um vídeo for encontrado e ele ainda não estiver em PiP, solicita o modo PiP
+        if (largestVideo && typeof largestVideo.requestPictureInPicture === 'function' && document.pictureInPictureElement !== largestVideo) {
+          largestVideo.requestPictureInPicture();
+        }
+      } catch(e) {
+        // Ignora erros silenciosamente
+      }
+      true;
+    })();
+  `;
+
   // ==========================================
   // CONTROLE DE GESTOS (VOLUME & BRILHO)
   // ==========================================
+  const togglePlayPause = useCallback(() => {
+    if (!webviewRef.current) return;
+    const script = `
+        const video = document.querySelector('video');
+        if (video) {
+            if (video.paused) { video.play(); } else { video.pause(); }
+        }
+        true;
+    `;
+    webviewRef.current.injectJavaScript(script);
+    setIsPaused(prev => !prev);
+  }, []);
+
+  const toggleMute = () => {
+    if (volume > 0) { // Silenciar
+        lastVolume.current = volume;
+        setVolume(0);
+    } else { // Reativar som
+        setVolume(lastVolume.current > 0.1 ? lastVolume.current : 0.5);
+    }
+  };
+
+  // Atualiza o estado de mudo com base no volume
+  useEffect(() => {
+      const shouldBeMuted = volume === 0;
+      if (isMuted !== shouldBeMuted) {
+        setIsMuted(shouldBeMuted);
+      }
+      volumeRef.current = volume; // Sincroniza ref para gestos
+  }, [volume]);
+
   const panResponder = useRef(
     PanResponder.create({
-      onStartShouldSetPanResponder: () => false, // Deixa toques passarem (para play/pause)
+      onStartShouldSetPanResponder: () => true, // Captura toques para mostrar/ocultar controles
       onMoveShouldSetPanResponder: (_, { dx, dy }) => {
         // Ativa apenas se for movimento vertical claro (ignora swipes horizontais ou toques acidentais)
         return Math.abs(dy) > 10 && Math.abs(dy) > Math.abs(dx);
@@ -192,18 +441,18 @@ const AppContent = () => {
       onPanResponderGrant: (evt, gestureState) => {
         const { x0 } = gestureState;
         const isRight = x0 > widthRef.current / 2;
-        
+
         // Define se é Volume (Direita) ou Brilho (Esquerda)
         gestureState.isVolume = isRight;
         gestureState.startValue = isRight ? volumeRef.current : brightnessRef.current;
-        
+
         if (hideGestureTimeout.current) clearTimeout(hideGestureTimeout.current);
       },
       onPanResponderMove: (_, gestureState) => {
         const { isVolume, startValue, dy } = gestureState;
         const delta = -dy / 250; // Sensibilidade do gesto
         const newValue = Math.max(0, Math.min(1, startValue + delta));
-
+  
         if (isVolume) {
           volumeRef.current = newValue;
           setVolume(newValue);
@@ -211,11 +460,21 @@ const AppContent = () => {
           brightnessRef.current = newValue;
           setBrightness(newValue);
         }
-
+  
         setGestureState({ visible: true, icon: isVolume ? 'volume' : 'brightness', value: newValue, label: isVolume ? 'VOLUME' : 'BRILHO' });
       },
-      onPanResponderRelease: () => {
-        hideGestureTimeout.current = setTimeout(() => setGestureState(prev => ({ ...prev, visible: false })), 1500);
+      onPanResponderRelease: (_, gestureState) => {
+        // Se o movimento foi pequeno, considera um toque para alternar os controles
+        if (Math.abs(gestureState.dx) < 5 && Math.abs(gestureState.dy) < 5) {
+          if (Platform.OS === 'web') {
+            togglePlayPause(); // No modo web, o clique no vídeo alterna a reprodução
+          } else {
+            setAreControlsVisible(prev => !prev); // No nativo, alterna a visibilidade dos controles
+          }
+        } else {
+          // Senão, foi um deslize, então esconde o indicador de gesto após um tempo
+          hideGestureTimeout.current = setTimeout(() => setGestureState(prev => ({ ...prev, visible: false })), 1500);
+        }
       }
     })
   ).current;
@@ -230,6 +489,23 @@ const AppContent = () => {
     ).start();
   }, []);
 
+  // Efeito para auto-ocultar os controles
+  useEffect(() => {
+    if (Platform.OS === 'web') return; // Desabilitado na web, que usa mouse hover
+
+    if (hideControlsTimeout.current) {
+      clearTimeout(hideControlsTimeout.current);
+    }
+    if (areControlsVisible && !isPaused) {
+      hideControlsTimeout.current = setTimeout(() => {
+        setAreControlsVisible(false);
+      }, 5000); // Oculta após 5 segundos
+    }
+    return () => {
+      if (hideControlsTimeout.current) clearTimeout(hideControlsTimeout.current);
+    };
+  }, [areControlsVisible, isPaused]);
+
   // ==========================================
   // SUPORTE A PICTURE-IN-PICTURE (PIP) MOBILE
   // ==========================================
@@ -239,16 +515,7 @@ const AppContent = () => {
     const subscription = AppState.addEventListener('change', nextAppState => {
       if (appState.current === 'active' && nextAppState.match(/inactive|background/)) {
         // Tenta entrar em PiP via JavaScript quando o app for minimizado
-        const enterPiP = `
-          try {
-            const videos = document.getElementsByTagName('video');
-            if (videos.length > 0 && typeof videos[0].requestPictureInPicture === 'function') {
-              videos[0].requestPictureInPicture();
-            }
-          } catch(e) {}
-          true;
-        `;
-        webviewRef.current?.injectJavaScript(enterPiP);
+        webviewRef.current?.injectJavaScript(enterPiPScript);
       } else if (appState.current.match(/inactive|background/) && nextAppState === 'active') {
         // Retorna o vídeo para o modo normal quando o usuário reabrir o app
         const exitPiP = `
@@ -286,68 +553,40 @@ const AppContent = () => {
   // ==========================================
   useEffect(() => {
     // Inicialização para Web
-    if (Platform.OS === 'web') {
-      if (document.getElementById('chromecast-sdk')) return;
+    if (Platform.OS !== 'web') return;
 
-      const script = document.createElement('script');
-      script.id = 'chromecast-sdk';
-      script.src = 'https://www.gstatic.com/cv/js/sender/v1/cast_sender.js?loadCastFramework=1';
-      script.async = true;
-      document.body.appendChild(script);
+    if (document.getElementById('chromecast-sdk')) return;
 
-      window.__onGCastApiAvailable = (isAvailable) => {
-        if (isAvailable) {
-          try {
-            const castContext = window.cast.framework.CastContext.getInstance();
-            castContext.setOptions({
-              receiverApplicationId: CHROMECAST_RECEIVER_APP_ID,
-              autoJoinPolicy: window.chrome.cast.AutoJoinPolicy.ORIGIN_SCOPED,
-            });
-            setIsCastApiAvailable(true);
-          } catch (e) {
-            console.error('W3Labs: Falha ao inicializar o Chromecast SDK na Web.', e);
-          }
+    const script = document.createElement('script');
+    script.id = 'chromecast-sdk';
+    script.src = 'https://www.gstatic.com/cv/js/sender/v1/cast_sender.js?loadCastFramework=1';
+    script.async = true;
+    document.body.appendChild(script);
+
+    window.__onGCastApiAvailable = (isAvailable) => {
+      if (isAvailable) {
+        try {
+          const castContext = window.cast.framework.CastContext.getInstance();
+          castContext.setOptions({
+            receiverApplicationId: CHROMECAST_RECEIVER_APP_ID,
+            autoJoinPolicy: window.chrome.cast.AutoJoinPolicy.ORIGIN_SCOPED,
+          });
+          setIsWebCastApiAvailable(true);
+        } catch (e) {
+          console.error('W3Labs: Falha ao inicializar o Chromecast SDK na Web.', e);
         }
-      };
-    }
-    // Inicialização para Nativo
-    else if (GoogleCast) {
-      setIsCastApiAvailable(true);
-
-      const sessionManager = GoogleCast.getSessionManager();
-      if (!sessionManager) return;
-
-      const updateCastState = () => {
-        sessionManager.getCurrentCastSession().then(session => {
-          if (session) {
-            const deviceName = session.getCastDevice()?.friendlyName || 'Dispositivo Conectado';
-            setCastState({ isCasting: true, deviceName });
-          } else {
-            setCastState({ isCasting: false, deviceName: null });
-          }
-        });
-      };
-
-      const listeners = [
-        sessionManager.onSessionStarted(updateCastState),
-        sessionManager.onSessionEnded(() => setCastState({ isCasting: false, deviceName: null })),
-        sessionManager.onSessionResumed(updateCastState),
-      ];
-
-      updateCastState(); // Check initial state
-
-      return () => listeners.forEach(listener => listener.remove());
-    }
+      }
+    };
   }, []);
 
   // Listener de estado do Cast para Web
   useEffect(() => {
-    if (Platform.OS !== 'web' || !isCastApiAvailable) return;
+    if (Platform.OS !== 'web' || !isWebCastApiAvailable) return;
 
     const castContext = window.cast.framework.CastContext.getInstance();
     const listener = (event) => {
       const session = castContext.getCurrentSession();
-      setCastState({
+      setWebCastState({
         isCasting: event.castState === 'CONNECTED',
         deviceName: session ? session.getCastDevice().friendlyName : null,
       });
@@ -355,13 +594,23 @@ const AppContent = () => {
 
     castContext.addEventListener(cast.framework.CastContextEventType.CAST_STATE_CHANGED, listener);
     return () => castContext.removeEventListener(cast.framework.CastContextEventType.CAST_STATE_CHANGED, listener);
-  }, [isCastApiAvailable]);
+  }, [isWebCastApiAvailable]);
 
   // Efeito para carregar mídia no Chromecast quando o canal ou estado de cast muda
   useEffect(() => {
-    if (!isCastApiAvailable || !castState.isCasting || !activeItem) return;
+    if (!activeItem) return;
 
-    if (Platform.OS === 'web') {
+    // Nativo: usa o hook `useRemoteMediaClient`
+    if (client) {
+      client.loadMedia({
+        mediaInfo: {
+          contentUrl: activeItem.streamUrl,
+          contentType: 'application/x-mpegURL',
+          metadata: { type: 'movie', title: activeItem.name, images: [{ url: activeItem.image }] },
+        }
+      }).catch(e => console.error('W3Labs: Erro ao carregar mídia no Chromecast (Nativo).', e));
+    } else if (Platform.OS === 'web' && isWebCastApiAvailable && webCastState.isCasting) {
+      // Web: Lógica existente
       const session = window.cast.framework.CastContext.getInstance().getCurrentSession();
       if (!session) return;
 
@@ -372,33 +621,19 @@ const AppContent = () => {
 
       const request = new window.chrome.cast.media.LoadRequest(mediaInfo);
       session.loadMedia(request).catch(e => console.error('W3Labs: Erro ao carregar mídia no Chromecast (Web).', e));
-    } else if (GoogleCast) {
-      GoogleCast.castMedia({
-        mediaInfo: {
-          contentUrl: activeItem.streamUrl,
-          contentType: 'application/x-mpegURL',
-          metadata: { type: 'movie', title: activeItem.name, images: [{ url: activeItem.image }] },
-        }
-      }).catch(e => console.error('W3Labs: Erro ao carregar mídia no Chromecast (Nativo).', e));
     }
-  }, [castState.isCasting, activeItem, isCastApiAvailable]);
+  }, [client, activeItem, isWebCastApiAvailable, webCastState.isCasting]);
 
-  const handleCastAction = () => {
-    if (castState.isCasting) {
-      if (Platform.OS === 'web' && isCastApiAvailable) {
-        window.cast.framework.CastContext.getInstance().endCurrentSession(true);
-      } else if (GoogleCast) {
-        GoogleCast.endSession().catch(e => console.error('W3Labs: Erro ao encerrar sessão de cast (Nativo).', e));
-      }
-      return;
-    }
-    
-    if (Platform.OS === 'web') {
-      if (isCastApiAvailable) {
-        window.cast.framework.CastContext.getInstance().requestSession().catch(e => console.error('W3Labs: Erro ao solicitar sessão de cast (Web).', e));
-      }
-    } else if (GoogleCast) {
-      GoogleCast.showCastDialog().catch(e => console.error('W3Labs: Erro ao exibir diálogo de cast (Nativo).', e));
+  const handleWebCastAction = () => {
+    if (Platform.OS !== 'web' || !isWebCastApiAvailable) return;
+
+    const castContext = window.cast.framework.CastContext.getInstance();
+    const session = castContext.getCurrentSession();
+
+    if (session) {
+      castContext.endCurrentSession(true);
+    } else {
+      castContext.requestSession().catch(e => console.error('W3Labs: Erro ao solicitar sessão de cast (Web).', e));
     }
   };
 
@@ -420,36 +655,46 @@ const AppContent = () => {
 
         const response = await fetch(endpoint);
         if (!response.ok) throw new Error('Falha na comunicação com o servidor.');
-        const json = await response.json();
-        if (!json.success || !json.data) throw new Error('A API retornou uma resposta inválida.');
+        let data = await response.json();
 
-        let parsedItems = [];
-        const data = json.data;
-        const channels = Array.isArray(data) ? data : (data.channels || []);
-        const events = data.events || [];
+        // A nova API pode retornar o array diretamente ou dentro de uma propriedade "data"
+        if (data.data && Array.isArray(data.data)) {
+          data = data.data;
+        }
 
-        parsedItems = [
-          ...channels.map(c => ({
-            id: c.id,
-            name: c.name,
-            category: c.category || 'TV',
-            image: c.logo,
-            streamUrl: c.streamUrl || c.embed_url || c.url || `https://reidoscanais.io/embed/player.php?id=${c.id}`,
+        if (!Array.isArray(data)) throw new Error('A API retornou uma resposta inválida.');
+
+        const parsedItems = data.map(item => {
+          // Heurística para diferenciar canais de eventos/esportes
+          const isEvent = item.title && item.poster;
+          const channelName = isEvent ? item.title : item.name;
+          const localLogo = findLogo(channelName);
+
+          if (isEvent) {
+            return {
+              id: item.id,
+              name: item.title,
+              category: item.category || 'Evento',
+              image: localLogo || item.poster,
+              streamUrl: item.embeds?.[0]?.embed_url || `https://reidoscanais.ooo/embed/player.php?id=${item.id}`,
+              type: 'event',
+              signal: Math.floor(Math.random() * 50) + 50
+            };
+          }
+
+          // Fallback para o formato de canal
+          return {
+            id: item.id,
+            name: item.name,
+            category: item.category || 'TV',
+            image: localLogo || item.logo,
+            streamUrl: item.streamUrl || item.embed_url || item.url || `https://reidoscanais.ooo/embed/player.php?id=${item.id}`,
             type: 'channel',
-            signal: Math.floor(Math.random() * 20) + 80
-          })),
-          ...events.map(e => ({
-            id: e.id,
-            name: e.title,
-            category: e.category || 'Evento',
-            image: e.poster,
-            streamUrl: e.embeds?.[0]?.embed_url || `https://reidoscanais.io/embed/player.php?id=${e.id}`,
-            type: 'event',
-            signal: Math.floor(Math.random() * 20) + 80
-          }))
-        ];
+            signal: Math.floor(Math.random() * 50) + 50
+          };
+        });
         
-        setItems(parsedItems);
+        setAllItems(parsedItems);
         // Sintoniza o primeiro canal se não houver um ativo ou se a sintonia for resultado de uma nova tentativa
         if ((!activeItem && parsedItems.length > 0) || (retryCount > 0 && parsedItems.length > 0)) {
           tuneChannel(parsedItems[0]);
@@ -471,6 +716,25 @@ const AppContent = () => {
     const delay = setTimeout(fetchMedia, debounceTime);
     return () => clearTimeout(delay);
   }, [searchQuery, refreshKey, retryCount]);
+
+  // Efeito para atualizar categorias e filtrar a lista de itens visíveis
+  useEffect(() => {
+    const uniqueCategories = ['Todos', ...new Set(allItems.map(item => item.category).filter(Boolean))];
+    setCategories(uniqueCategories);
+
+    let currentCategory = selectedCategory;
+    if (!uniqueCategories.includes(currentCategory)) {
+      currentCategory = 'Todos';
+      setSelectedCategory('Todos');
+    }
+
+    if (currentCategory === 'Todos') {
+      setItems(allItems);
+    } else {
+      setItems(allItems.filter(item => item.category === currentCategory));
+    }
+    setIsCategoryDropdownVisible(false); // Fecha o dropdown ao pesquisar
+  }, [allItems, selectedCategory]);
 
   // ==========================================
   // CONTROLE DE MÍDIA NA TELA DE BLOQUEIO (MEDIA SESSION API)
@@ -544,23 +808,13 @@ const AppContent = () => {
   // ==========================================
   const handleForcePiP = () => {
     if (Platform.OS === 'web') {
-      try {
-        const videos = document.getElementsByTagName('video');
-        if (videos.length > 0 && typeof videos[0].requestPictureInPicture === 'function') {
-          videos[0].requestPictureInPicture();
-        }
-      } catch (e) {}
+      // A ativação programática do PiP na web é restrita e geralmente requer
+      // uma interação direta do usuário com o vídeo dentro do iframe.
+      // Esta função é primariamente para plataformas nativas.
+      console.warn('A ativação manual de Picture-in-Picture na web tem suporte limitado.');
     } else if (webviewRef.current) {
-      const enterPiP = `
-        try {
-          const videos = document.getElementsByTagName('video');
-          if (videos.length > 0 && typeof videos[0].requestPictureInPicture === 'function') {
-            videos[0].requestPictureInPicture();
-          }
-        } catch(e) {}
-        true;
-      `;
-      webviewRef.current.injectJavaScript(enterPiP);
+      // Injeta o script inteligente de PiP no WebView
+      webviewRef.current.injectJavaScript(enterPiPScript);
     }
   };
 
@@ -578,7 +832,7 @@ const AppContent = () => {
       >
         <View style={[styles.epgItem, isActive && styles.epgItemActive, Platform.isTV && isActive && styles.epgItemTVFocus]}>
           <View style={styles.epgItemLogoContainer}>
-            {item.image ? <Image source={{ uri: item.image }} style={styles.epgItemLogo} resizeMode="contain" /> : <Tv size={24} color="#666" />}
+            {item.image ? <Image source={typeof item.image === 'string' ? { uri: item.image } : item.image} style={styles.epgItemLogo} resizeMode="contain" /> : <Tv size={24} color="#666" />}
           </View>
           <View style={styles.epgItemTextContainer}>
             <Text style={[styles.epgItemName, isActive && styles.epgItemNameActive]} numberOfLines={1}>{item.name}</Text>
@@ -600,97 +854,20 @@ const AppContent = () => {
 
   const keyExtractor = useCallback((item) => item.id.toString(), []);
 
-  const EpgContent = useCallback(() => (
-    <View style={styles.epgContentWrapper}>
-      <View style={styles.searchBarContainer}>
-        <View style={styles.searchInputWrapper}>
-          <Search size={20} color="#888" style={{ marginLeft: 12 }}/>
-          <TextInput
-            style={styles.searchInput}
-            placeholder="Buscar canal ou evento"
-            placeholderTextColor="#888"
-            value={searchQuery}
-            onChangeText={setSearchQuery}
-          />
-        </View>
-      </View>
-
-      <View style={styles.refreshContainer}>
-        <TouchableOpacity style={styles.refreshButton} onPress={() => {
-          setRetryCount(0);
-          setRefreshKey(prev => prev + 1);
-        }}>
-          <RefreshCw size={18} color="#ccc" />
-          <Text style={styles.refreshText}>Atualizar Lista</Text>
-        </TouchableOpacity>
-      </View>
-
-      <FlatList
-        data={items}
-        keyExtractor={keyExtractor}
-        renderItem={renderEpgItem}
-        style={styles.epgList}
-        indicatorStyle="white"
-        showsVerticalScrollIndicator={false}
-        initialNumToRender={12}
-        maxToRenderPerBatch={15}
-        windowSize={5}
-        contentContainerStyle={{ paddingBottom: 16 }}
-        ListEmptyComponent={
-          isLoading ? (
-            <ActivityIndicator size="large" color="#E3262E" style={{ marginTop: 40 }} />
-          ) : error ? (
-            <View style={styles.errorContainer}>
-              <AlertTriangle size={32} color="#E3262E" />
-              <Text style={styles.errorText}>{error}</Text>
-            </View>
-          ) : (
-            <Text style={styles.emptyText}>Nenhuma transmissão encontrada.</Text>
-          )
-        }
-      />
-    </View>
-  ), [isLoading, error, items, activeItem, renderEpgItem, searchQuery]);
-
-  const renderBelowPlayerInfo = () => (
-    activeItem && !isTuning ? (
-      <View style={styles.belowPlayerInfo}>
-        <View style={styles.bpLeft}>
-          <View style={styles.bpLogoContainer}>
-            {activeItem.image ? <Image source={{ uri: activeItem.image }} style={styles.bpLogo} resizeMode="contain" /> : <Tv size={24} color="#999" />}
-          </View>
-          <View style={styles.bpTextContainer}>
-            <Text style={styles.bpTitle}>{activeItem.name}</Text>
-            <View style={styles.bpTags}>
-              <View style={styles.bpLiveBadge}><Text style={styles.bpLiveText}>AO VIVO</Text></View>
-              <Text style={styles.bpCategory}>{activeItem.category}</Text>
-            </View>
-          </View>
-        </View>
-        <View style={styles.bpActions}>
-          <TouchableOpacity onPress={handleForcePiP} style={styles.bpActionBtn}>
-            <PictureInPicture size={20} color="#fff" />
-          </TouchableOpacity>
-          <TouchableOpacity onPress={handleCastAction} style={styles.bpActionBtn}>
-            <Cast size={20} color={castState.isCasting ? '#E3262E' : '#fff'} />
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.bpActionBtn} onPress={() => Linking.openURL(activeItem.streamUrl)}>
-            <ExternalLink size={20} color="#fff" />
-          </TouchableOpacity>
-        </View>
-      </View>
-    ) : null
-  );
-
   const renderPlayer = (layoutStyle) => (
-    <View style={[styles.playerContentWrapper, layoutStyle]}>
+    <View
+      style={[styles.playerContentWrapper, layoutStyle]}
+      // Adiciona comportamento de hover para exibir/ocultar controles na web
+      onMouseEnter={Platform.OS === 'web' ? () => setAreControlsVisible(true) : undefined}
+      onMouseLeave={Platform.OS === 'web' ? () => setAreControlsVisible(false) : undefined}
+    >
       <View style={styles.videoContainer}>
         {!activeItem ? (
           <View style={[styles.centerContent, { backgroundColor: '#000' }]}>
             <ActivityIndicator size="large" color="#E3262E" />
             <Text style={styles.loadingText}>SINCRONIZANDO SINAL...</Text>
           </View>
-        ) : castState.isCasting ? (
+        ) : isCasting ? (
           <View style={[styles.centerContent, { backgroundColor: '#0a0a0a' }]}>
             <Animated.View style={[styles.castIconWrapper, { transform: [{ scale: tuningAnim }] }]}>
               <MonitorPlay size={width > 600 ? 100 : 70} color="#E3262E" />
@@ -698,7 +875,7 @@ const AppContent = () => {
                 <Smartphone size={width > 600 ? 30 : 20} color="#fff" />
               </View>
             </Animated.View>
-            <Text style={styles.castTitle}>Conectado: {castState.deviceName}</Text>
+            <Text style={styles.castTitle}>Conectado: {castDeviceName}</Text>
             <Text style={styles.castSubtitle}>Exibindo <Text style={{ color: '#fff', fontWeight: 'bold' }}>{activeItem.name}</Text></Text>
           </View>
         ) : !isTuning && WebView ? (
@@ -707,9 +884,9 @@ const AppContent = () => {
             source={{
               html: `
                 <style>body,html{margin:0;padding:0;overflow:hidden;background-color:#000;}iframe{width:100vw;height:100vh;border:none;}</style>
-                <body><iframe src="${activeItem.streamUrl}" allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowfullscreen="true"></iframe></body>
+                <body><iframe src="${activeItem.streamUrl}" allow="autoplay; encrypted-media; picture-in-picture; fullscreen"></iframe></body>
               `,
-              baseUrl: 'https://reidoscanais.io'
+              baseUrl: 'https://reidoscanais.ooo'
             }}
             style={styles.webview}
             allowsFullscreenVideo={true}
@@ -724,7 +901,62 @@ const AppContent = () => {
         ) : null}
       </View>
 
-      {isTuning && !castState.isCasting && (
+      {!isTuning && !isCasting && areControlsVisible && (
+        <View style={styles.playerControlsContainer} pointerEvents="box-none">
+          <LinearGradient colors={['rgba(0,0,0,0.6)', 'transparent']} style={styles.controlsGradientTop} />
+          
+          <View style={[styles.topControls, { paddingTop: isLandscape ? 16 : Math.max(insets.top, 16) }]}>
+            <View style={styles.playerTitleContainer}>
+              <Text style={styles.playerTitle} numberOfLines={1}>{activeItem?.name}</Text>
+              {/* Mostra o indicador "AO VIVO" apenas para canais, não para eventos */}
+              {activeItem?.type === 'channel' && (
+                <View style={styles.liveBadge}>
+                  <Text style={styles.liveBadgeText}>AO VIVO</Text>
+                </View>
+              )}
+            </View>
+          </View>
+
+          <View style={styles.centerControls}>
+            <TouchableOpacity style={styles.playPauseButton} onPress={togglePlayPause}>
+              {isPaused ? <Play size={48} color="#fff" fill="#fff" /> : <Pause size={48} color="#fff" fill="#fff" />}
+            </TouchableOpacity>
+          </View>
+
+          <LinearGradient colors={['transparent', 'rgba(0,0,0,0.6)']} style={styles.controlsGradientBottom} />
+          <View style={[styles.bottomControls, { paddingBottom: isLandscape ? 12 : Math.max(insets.bottom, 12) }]}>
+            <TouchableOpacity onPress={toggleMute} style={styles.controlButton}>
+              {isMuted ? <VolumeX size={24} color="#fff" /> : <Volume2 size={24} color="#fff" />}
+            </TouchableOpacity>
+            
+            <View style={{flex: 1}} />
+
+            <TouchableOpacity onPress={handleForcePiP} style={styles.controlButton}>
+              <PictureInPicture size={24} color="#fff" />
+            </TouchableOpacity>
+
+            {Platform.OS === 'web' ? (
+              <TouchableOpacity onPress={handleWebCastAction} style={styles.controlButton}>
+                <Cast size={24} color={isCasting ? '#E3262E' : '#fff'} />
+              </TouchableOpacity>
+            ) : (
+              <CastButton style={[styles.controlButton, { tintColor: isCasting ? '#E3262E' : '#fff', width: 40, height: 40 }]} />
+            )}
+
+            <TouchableOpacity style={styles.controlButton} onPress={() => Linking.openURL(activeItem.streamUrl)}>
+              <ExternalLink size={24} color="#fff" />
+            </TouchableOpacity>
+
+            {isLandscape && (
+              <TouchableOpacity onPress={() => setIsEpgVisible(v => !v)} style={styles.controlButton}>
+                <Menu size={24} color="#fff" />
+              </TouchableOpacity>
+            )}
+          </View>
+        </View>
+      )}
+
+      {isTuning && !isCasting && (
         <Animated.View style={[styles.tuningOverlay, { opacity: tuningAnim }]}>
           <View style={[styles.centerContent, { backgroundColor: 'rgba(0,0,0,0.9)' }]}>
             <ActivityIndicator size="large" color="#E3262E" />
@@ -773,13 +1005,80 @@ const AppContent = () => {
         
         <View style={[styles.playerSection, isLandscape ? { flex: 1 } : {}]}>
           {renderPlayer(isLandscape ? { flex: 1 } : { width: '100%', aspectRatio: 16 / 9 })}
-          {renderBelowPlayerInfo()}
         </View>
         
-        <View style={[styles.epgSection, isLandscape ? { width: Math.max(280, Math.min(width * 0.4, 400)), borderLeftWidth: 1, borderColor: '#222' } : { flex: 1 }]}>
-          <EpgContent />
-        </View>
+        {(!isLandscape || isEpgVisible) && (
+          <View style={[styles.epgSection, isLandscape ? { width: Math.max(280, Math.min(width * 0.4, 400)), borderLeftWidth: 1, borderColor: '#222' } : { flex: 1 }]}>
+            <View style={styles.epgContentWrapper}>
+              <View style={styles.searchBarContainer}>
+                <View style={styles.searchInputWrapper}>
+                  <Search size={20} color="#888" style={{ marginLeft: 12 }}/>
+                  <TextInput
+                    style={styles.searchInput}
+                    placeholder="Buscar canal ou evento"
+                    placeholderTextColor="#888"
+                    value={searchQuery}
+                    onChangeText={setSearchQuery}
+                  />
+                </View>
+              </View>
 
+              <View style={styles.epgHeader}>
+                <TouchableOpacity style={styles.refreshButton} onPress={() => {
+                  setRetryCount(0);
+                  setRefreshKey(prev => prev + 1);
+                }}>
+                  <RefreshCw size={16} color="#ccc" />
+                  <Text style={styles.refreshText}>Atualizar</Text>
+                </TouchableOpacity>
+
+                <View style={styles.categoryDropdownContainer}>
+                  <TouchableOpacity style={styles.categoryDropdownButton} onPress={() => setIsCategoryDropdownVisible(v => !v)}>
+                    <Text style={styles.categoryDropdownText} numberOfLines={1}>{selectedCategory}</Text>
+                    <ChevronDown size={16} color="#ccc" />
+                  </TouchableOpacity>
+
+                  {isCategoryDropdownVisible && (
+                    <View style={styles.categoryDropdownMenu}>
+                      <FlatList
+                        data={categories}
+                        keyExtractor={item => item}
+                        renderItem={({ item: categoryItem }) => (
+                          <TouchableOpacity style={styles.categoryDropdownItem} onPress={() => setSelectedCategory(categoryItem)}>
+                            <Text style={styles.categoryDropdownItemText}>{categoryItem}</Text>
+                          </TouchableOpacity>
+                        )}
+                      />
+                    </View>
+                  )}
+                </View>
+              </View>
+
+            <FlatList
+              data={items}
+              keyExtractor={keyExtractor}
+              renderItem={renderEpgItem}
+              style={styles.epgList}
+              indicatorStyle="white"
+              showsVerticalScrollIndicator={false}
+              initialNumToRender={12}
+              maxToRenderPerBatch={15}
+              windowSize={5}
+              contentContainerStyle={{ paddingBottom: 16 }}
+              ListEmptyComponent={
+                isLoading ? (
+                  <ActivityIndicator size="large" color="#E3262E" style={{ marginTop: 40 }} />
+                ) : error ? (
+                  <View style={styles.errorContainer}>
+                    <AlertTriangle size={32} color="#E3262E" />
+                    <Text style={styles.errorText}>{error}</Text>
+                  </View>
+                ) : <Text style={styles.emptyText}>Nenhuma transmissão encontrada.</Text>
+              }
+            />
+            </View>
+          </View>
+        )}
       </View>
     </View>
   );
@@ -814,20 +1113,6 @@ const styles = StyleSheet.create({
   tuningText: { color: '#fff', fontSize: 12, letterSpacing: 2, marginBottom: 4 },
   tuningChannel: { color: '#E3262E', fontSize: 22, fontWeight: '900', letterSpacing: 1 },
 
-  // INFO DO CANAL E AÇÕES (ABAIXO DO PLAYER)
-  belowPlayerInfo: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 16, backgroundColor: '#111', borderBottomWidth: 1, borderBottomColor: '#222' },
-  bpLeft: { flexDirection: 'row', alignItems: 'center', flex: 1, flexShrink: 1 },
-  bpLogoContainer: { width: 50, height: 50, borderRadius: 4, backgroundColor: '#1a1a1a', justifyContent: 'center', alignItems: 'center', padding: 4 },
-  bpLogo: { width: '100%', height: '100%' },
-  bpTextContainer: { marginLeft: 16, flex: 1 },
-  bpTitle: { color: '#fff', fontSize: 16, fontWeight: 'bold', marginBottom: 4 },
-  bpTags: { flexDirection: 'row', alignItems: 'center' },
-  bpLiveBadge: { backgroundColor: '#E3262E', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 2, marginRight: 8 },
-  bpLiveText: { color: '#fff', fontSize: 10, fontWeight: 'bold' },
-  bpCategory: { color: '#999', fontSize: 12 },
-  bpActions: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  bpActionBtn: { padding: 10, backgroundColor: '#1a1a1a', borderRadius: 8 },
-
   epgContentWrapper: { flex: 1, backgroundColor: '#000' },
   
   // BARRA DE BUSCA
@@ -835,10 +1120,46 @@ const styles = StyleSheet.create({
   searchInputWrapper: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#1A1A1A', borderRadius: 8, height: 44 },
   searchInput: { flex: 1, height: '100%', paddingHorizontal: 12, color: '#fff', fontSize: 15 },
   
-  // ATUALIZAR LISTA
-  refreshContainer: { padding: 16, backgroundColor: '#000', borderBottomWidth: 1, borderColor: '#222' },
-  refreshButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: '#1A1A1A', paddingVertical: 12, borderRadius: 8, gap: 8 },
-  refreshText: { color: '#ccc', fontSize: 14, fontWeight: 'bold' },
+  // CABEÇALHO EPG (ATUALIZAR E FILTROS)
+  epgHeader: {
+    flexDirection: 'row',
+    padding: 16,
+    paddingTop: 0,
+    backgroundColor: '#000',
+    borderBottomWidth: 1,
+    borderColor: '#222',
+    gap: 16,
+    alignItems: 'center',
+    zIndex: 100, // Garante que o dropdown fique sobre a lista
+  },
+  refreshButton: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: '#1A1A1A', paddingVertical: 12, borderRadius: 8, gap: 8 },
+  refreshText: { color: '#ccc', fontSize: 14, fontWeight: '500' },
+  categoryDropdownContainer: { flex: 1, position: 'relative' },
+  categoryDropdownButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#1A1A1A',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    gap: 8,
+  },
+  categoryDropdownText: { color: '#ccc', fontSize: 14, fontWeight: '500', flex: 1 },
+  categoryDropdownMenu: {
+    position: 'absolute',
+    top: '110%',
+    right: 0,
+    width: '100%',
+    backgroundColor: '#1A1A1A',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#333',
+    maxHeight: 250,
+    overflow: 'hidden',
+  },
+  categoryDropdownItem: { paddingVertical: 14, paddingHorizontal: 16, borderBottomWidth: 1, borderBottomColor: '#282828' },
+  categoryDropdownItemText: { color: '#fff', fontSize: 14 },
 
   // LISTA DE CANAIS
   epgList: { paddingHorizontal: 16 },
@@ -863,6 +1184,61 @@ const styles = StyleSheet.create({
   castTitle: { color: '#fff', fontSize: 20, fontWeight: 'bold', marginBottom: 8, textAlign: 'center' },
   castSubtitle: { color: '#999', fontSize: 14, textAlign: 'center' },
   
+  // CONTROLES DO PLAYER
+  playerControlsContainer: { ...StyleSheet.absoluteFillObject, zIndex: 20, justifyContent: 'center', alignItems: 'center' },
+  controlsGradientTop: { position: 'absolute', top: 0, left: 0, right: 0, height: 80 },
+  controlsGradientBottom: { position: 'absolute', bottom: 0, left: 0, right: 0, height: 80 },
+  topControls: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    padding: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  playerTitleContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    flexShrink: 1, // Garante que o container não empurre outros elementos para fora
+  },
+  playerTitle: {
+    color: '#fff',
+    fontSize: 18,
+    fontWeight: 'bold',
+    textShadowColor: 'rgba(0, 0, 0, 0.75)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 4,
+    flexShrink: 1, // Permite que o texto encolha se o nome for muito grande
+  },
+  liveBadge: {
+    backgroundColor: '#E3262E',
+    borderRadius: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+  },
+  liveBadgeText: { color: '#fff', fontSize: 12, fontWeight: 'bold', letterSpacing: 0.5 },
+  centerControls: {
+    // O botão de play/pause é centralizado pelo container pai
+  },
+  playPauseButton: {
+    padding: 16,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    borderRadius: 50,
+  },
+  bottomControls: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 12,
+    gap: 16,
+  },
+  controlButton: { padding: 8 },
+
   // GESTOS UI
   gestureIndicatorContainer: { ...StyleSheet.absoluteFillObject, justifyContent: 'center', alignItems: 'center', zIndex: 50 },
   gestureBox: { width: 140, height: 140, borderRadius: 16, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(20,20,20,0.8)', gap: 10 },

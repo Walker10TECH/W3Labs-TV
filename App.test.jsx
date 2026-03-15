@@ -17,41 +17,33 @@ jest.mock('react-native-webview', () => {
     WebView: (props) => <View testID="mock-webview" {...props} />,
   };
 });
-
 jest.mock('expo-av', () => ({
   Audio: {
     setAudioModeAsync: jest.fn(() => Promise.resolve()),
   },
 }));
 
-// A lógica do App.jsx verifica se NativeModules.RNGoogleCast existe.
-// Precisamos simular sua existência para que o mock de 'react-native-google-cast' seja usado.
-jest.mock('react-native', () => {
-  const RN = jest.requireActual('react-native');
-  RN.NativeModules.RNGoogleCast = true; // Simula a existência do módulo nativo
-  return RN;
-});
-
 jest.mock('react-native-google-cast', () => ({
   __esModule: true,
-  default: {
-    showCastDialog: jest.fn(),
-    getSessionManager: jest.fn(() => ({
-      onSessionStarted: jest.fn(() => ({ remove: jest.fn() })),
-      onSessionEnded: jest.fn(() => ({ remove: jest.fn() })),
-      onSessionResumed: jest.fn(() => ({ remove: jest.fn() })),
-      getCurrentCastSession: jest.fn(() => Promise.resolve(null)),
-    })),
+  useCastState: jest.fn(() => 'noDevicesAvailable'),
+  useRemoteMediaClient: jest.fn(() => null),
+  useCastDevice: jest.fn(() => null),
+  CastButton: (props) => {
+    const { TouchableOpacity, Text, View } = require('react-native');
+    return (
+      <TouchableOpacity testID="mock-cast-button" {...props}>
+        <View><Text>Cast</Text></View>
+      </TouchableOpacity>
+    );
   },
-  CastContext: {},
 }));
 
 // Dados mocados para simular respostas da API
 const mockChannelsResponse = {
   success: true,
   data: [
-    { id: '101', name: 'Canal de Notícias', category: 'Jornalismo', image: 'url_to_image_1.png', streamUrl: 'url1' },
-    { id: '102', name: 'Canal de Esportes', category: 'Esportes', image: 'url_to_image_2.png', streamUrl: 'url2' },
+    { id: '101', name: 'Canal de Notícias', category: 'Jornalismo', logo: 'url_to_image_1.png', streamUrl: 'url1' },
+    { id: '102', name: 'Canal de Esportes', category: 'Esportes', logo: 'url_to_image_2.png', streamUrl: 'url2' },
   ],
 };
 
@@ -59,7 +51,7 @@ const mockSearchResponse = {
   success: true,
   data: {
     channels: [
-      { id: '201', name: 'Busca de Filmes', category: 'Filmes', image: 'url_to_image_3.png', streamUrl: 'url3' },
+      { id: '201', name: 'Busca de Filmes', category: 'Filmes', logo: 'url_to_image_3.png', streamUrl: 'url3' },
     ]
   }
 };
@@ -178,6 +170,55 @@ describe('<App />', () => {
 
       // O indicador de "Sintonizando" não deve aparecer
       expect(queryByText('SINTONIZANDO')).toBeNull();
+    });
+  });
+
+  // --- Testes para o filtro de categoria ---
+  describe('Category Filtering', () => {
+    it('deve filtrar os canais ao selecionar uma categoria', async () => {
+      fetch.mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({
+          success: true,
+          data: [
+            { id: '101', name: 'Canal de Notícias', category: 'Jornalismo', logo: 'url1', streamUrl: 'url1' },
+            { id: '102', name: 'Canal de Esportes', category: 'Esportes', logo: 'url2', streamUrl: 'url2' },
+            { id: '103', name: 'Outro de Esportes', category: 'Esportes', logo: 'url3', streamUrl: 'url3' },
+          ],
+        }),
+      });
+
+      const { findByText, getByText, queryByText } = render(<App />);
+
+      // Avança o timer do debounce inicial
+      act(() => { jest.advanceTimersByTime(500); });
+
+      // Verifica se todos os canais estão visíveis inicialmente
+      expect(await findByText('Canal de Notícias')).toBeTruthy();
+      expect(await findByText('Canal de Esportes')).toBeTruthy();
+      expect(await findByText('Outro de Esportes')).toBeTruthy();
+
+      // Abre o dropdown de categorias (o botão mostra "Todos" inicialmente)
+      const dropdownButton = getByText('Todos');
+      fireEvent.press(dropdownButton);
+
+      // Seleciona a categoria "Esportes"
+      const sportsCategory = await findByText('Esportes');
+      fireEvent.press(sportsCategory);
+
+      // Verifica se apenas os canais de esporte estão visíveis
+      await waitFor(() => {
+        expect(queryByText('Canal de Notícias')).toBeNull();
+      });
+      expect(queryByText('Canal de Esportes')).toBeTruthy();
+      expect(queryByText('Outro de Esportes')).toBeTruthy();
+
+      // Seleciona "Todos" para voltar ao estado inicial
+      fireEvent.press(getByText('Esportes'));
+      fireEvent.press(await findByText('Todos'));
+
+      // Verifica se todos os canais voltaram a ser exibidos
+      expect(await findByText('Canal de Notícias')).toBeTruthy();
     });
   });
 });
