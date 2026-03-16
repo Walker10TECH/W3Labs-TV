@@ -1,8 +1,8 @@
 import React from 'react';
 import { render, fireEvent, waitFor, act } from '@testing-library/react-native';
 import App from '../App';
-
 // --- Mocks ---
+jest.mock('../assets/tv.gif', () => 'tv.gif');
 
 // Mock da API fetch
 global.fetch = jest.fn();
@@ -22,6 +22,13 @@ jest.mock('expo-av', () => ({
     setAudioModeAsync: jest.fn(() => Promise.resolve()),
   },
 }));
+jest.mock('expo-video', () => ({
+  useVideoPlayer: jest.fn(() => ({})),
+  VideoView: (props) => {
+    const { View } = require('react-native');
+    return <View testID="mock-video-view" {...props} />;
+  },
+}));
 
 jest.mock('react-native-google-cast', () => ({
   __esModule: true,
@@ -38,22 +45,24 @@ jest.mock('react-native-google-cast', () => ({
   },
 }));
 
+const API_BASE_URL = 'https://api.reidoscanais.ooo';
+
 // Dados mocados para simular respostas da API
 const mockChannelsResponse = {
-  success: true,
   data: [
-    { id: '101', name: 'Canal de Notícias', category: 'Jornalismo', logo: 'url_to_image_1.png', streamUrl: 'url1' },
-    { id: '102', name: 'Canal de Esportes', category: 'Esportes', logo: 'url_to_image_2.png', streamUrl: 'url2' },
+    { id: '101', name: 'Canal de Notícias', category: 'Notícias', logo: 'url_to_image_1.png', streamUrl: 'url1' },
+    { id: '102', name: 'Canal de Esportes Mock', category: 'Esportes', logo: 'url_to_image_2.png', streamUrl: 'url2' },
   ],
 };
 
+const mockSportsResponse = {
+    data: [],
+};
+
 const mockSearchResponse = {
-  success: true,
-  data: {
-    channels: [
-      { id: '201', name: 'Busca de Filmes', category: 'Filmes', logo: 'url_to_image_3.png', streamUrl: 'url3' },
-    ]
-  }
+  data: [
+    { id: '201', name: 'Busca de Filmes', category: 'Filmes', logo: 'url_to_image_3.png', streamUrl: 'url3' },
+  ]
 };
 
 
@@ -62,65 +71,79 @@ describe('<App />', () => {
     // Limpa mocks antes de cada teste
     fetch.mockClear();
     jest.useFakeTimers();
+    // Mock a implementação do fetch para ser mais flexível
+    fetch.mockImplementation(url => {
+        if (url === `${API_BASE_URL}/channels`) {
+            return Promise.resolve({ ok: true, json: () => Promise.resolve(mockChannelsResponse) });
+        }
+        if (url === `${API_BASE_URL}/sports`) {
+            return Promise.resolve({ ok: true, json: () => Promise.resolve(mockSportsResponse) });
+        }
+        if (url.startsWith(`${API_BASE_URL}/search`)) {
+            return Promise.resolve({ ok: true, json: () => Promise.resolve(mockSearchResponse) });
+        }
+        return Promise.resolve({ ok: false, status: 404, json: () => Promise.resolve({}) });
+    });
   });
 
   afterEach(() => {
     jest.useRealTimers();
   });
 
+  const advanceTimersAndPassSplash = async () => {
+      await act(async () => {
+          jest.advanceTimersByTime(4000); // Passa pelo splash screen
+      });
+      await act(async () => {
+          jest.advanceTimersByTime(500); // Passa pelo debounce de fetch
+      });
+  };
+
   // --- Testes para a lógica de busca e fetch de canais ---
   describe('Channel Fetching and Searching', () => {
     it('deve buscar e exibir os canais iniciais ao carregar', async () => {
-      fetch.mockResolvedValueOnce({
-        ok: true,
-        json: () => Promise.resolve(mockChannelsResponse),
-      });
-
       const { findByText } = render(<App />);
 
-      // Avança o timer do debounce inicial
-      act(() => { jest.advanceTimersByTime(500); });
+      await advanceTimersAndPassSplash();
 
       // Verifica se os canais da resposta mockada foram renderizados
       expect(await findByText('Canal de Notícias')).toBeTruthy();
-      expect(await findByText('Canal de Esportes')).toBeTruthy();
+      expect(await findByText('Canal de Esportes Mock')).toBeTruthy();
+      // Verifica um canal estático também
+      expect(await findByText('BandSports')).toBeTruthy();
 
-      // Verifica se a API correta foi chamada
-      expect(fetch).toHaveBeenCalledWith('https://api.reidoscanais.io/channels');
+      // Verifica se as APIs corretas foram chamadas
+      expect(fetch).toHaveBeenCalledWith(`${API_BASE_URL}/channels`);
+      expect(fetch).toHaveBeenCalledWith(`${API_BASE_URL}/sports`);
     });
 
     it('deve buscar e exibir resultados ao digitar na busca', async () => {
-      // Mock para o carregamento inicial e para a busca
-      fetch
-        .mockResolvedValueOnce({ ok: true, json: () => Promise.resolve(mockChannelsResponse) })
-        .mockResolvedValueOnce({ ok: true, json: () => Promise.resolve(mockSearchResponse) });
-
       const { getByPlaceholderText, findByText, queryByText } = render(<App />);
       
-      // Avança o timer para o fetch inicial
-      act(() => { jest.advanceTimersByTime(500); });
-      await waitFor(() => expect(fetch).toHaveBeenCalledTimes(1));
+      await advanceTimersAndPassSplash();
+      await waitFor(() => expect(fetch).toHaveBeenCalledTimes(2));
 
       // Simula a digitação no campo de busca
       const searchInput = getByPlaceholderText(/Buscar canal ou evento/i);
       fireEvent.changeText(searchInput, 'Filmes');
 
       // Avança o timer do debounce da busca
-      act(() => { jest.advanceTimersByTime(500); });
+      await act(async () => { jest.advanceTimersByTime(500); });
 
       // Verifica se o resultado da busca apareceu e o canal antigo sumiu
       expect(await findByText('Busca de Filmes')).toBeTruthy();
       expect(queryByText('Canal de Notícias')).toBeNull();
 
       // Verifica se a API de busca foi chamada com o termo correto
-      expect(fetch).toHaveBeenCalledWith('https://api.reidoscanais.io/search?q=Filmes');
+      expect(fetch).toHaveBeenCalledWith(`${API_BASE_URL}/search?q=Filmes`);
     });
 
     it('deve exibir uma mensagem de erro se a API falhar', async () => {
-      fetch.mockResolvedValueOnce({ ok: false });
+      fetch.mockImplementation(() => Promise.resolve({ ok: false }));
 
       const { findByText } = render(<App />);
-      act(() => { jest.advanceTimersByTime(500); });
+      await act(async () => { jest.advanceTimersByTime(4000); }); // Passa pelo splash
+      await act(async () => { jest.advanceTimersByTime(500); }); // Tenta o fetch
 
       // Verifica se a mensagem de erro é exibida
       expect(await findByText(/Sinal indisponível/i)).toBeTruthy();
@@ -130,40 +153,40 @@ describe('<App />', () => {
   // --- Testes para a função tuneChannel ---
   describe('tuneChannel Functionality', () => {
     it('deve sintonizar um novo canal ao ser pressionado', async () => {
-      fetch.mockResolvedValue({ ok: true, json: () => Promise.resolve(mockChannelsResponse) });
       const { getByText, findByText, queryByText } = render(<App />);
       
-      act(() => { jest.advanceTimersByTime(500); });
+      await advanceTimersAndPassSplash();
 
-      // Espera o canal inicial (Canal de Notícias) ser sintonizado
+      // Espera os canais carregarem
       expect(await findByText('Canal de Notícias')).toBeTruthy();
 
-      // Pressiona o segundo canal da lista
-      const channel2Button = getByText('Canal de Esportes');
+      // O canal ativo inicial é 'BandSports' (estático)
+      // Pressiona o segundo canal da lista mockada
+      const channel2Button = getByText('Canal de Esportes Mock');
       fireEvent.press(channel2Button);
 
       // Verifica se o indicador de "Sintonizando" aparece
       expect(queryByText('SINTONIZANDO')).toBeTruthy();
-      expect(queryByText('CANAL DE ESPORTES')).toBeTruthy();
+      expect(queryByText('CANAL DE ESPORTES MOCK')).toBeTruthy();
 
       // Avança os timers para completar a sintonização
-      act(() => { jest.advanceTimersByTime(1200); });
+      await act(async () => { jest.advanceTimersByTime(1200); });
 
       // Verifica se o indicador de "Sintonizando" desapareceu
       await waitFor(() => expect(queryByText('SINTONIZANDO')).toBeNull());
 
-      // Verifica se o título abaixo do player foi atualizado para o novo canal
-      expect(await findByText('Canal de Esportes')).toBeTruthy();
+      // Verifica se o título no player foi atualizado
+      const playerTitle = await findByText('Canal de Esportes Mock');
+      expect(playerTitle).toBeTruthy();
     });
 
     it('não deve fazer nada se o canal ativo for pressionado novamente', async () => {
-      fetch.mockResolvedValue({ ok: true, json: () => Promise.resolve(mockChannelsResponse) });
-      const { getByText, queryByText } = render(<App />);
+      const { findByText, queryByText } = render(<App />);
       
-      act(() => { jest.advanceTimersByTime(500); });
+      await advanceTimersAndPassSplash();
       
-      // Espera o canal inicial carregar
-      const activeChannelButton = await findByText('Canal de Notícias');
+      // O canal ativo inicial é 'BandSports'
+      const activeChannelButton = await findByText('BandSports');
       
       // Pressiona o canal que já está ativo
       fireEvent.press(activeChannelButton);
@@ -176,29 +199,30 @@ describe('<App />', () => {
   // --- Testes para o filtro de categoria ---
   describe('Category Filtering', () => {
     it('deve filtrar os canais ao selecionar uma categoria', async () => {
-      fetch.mockResolvedValueOnce({
-        ok: true,
-        json: () => Promise.resolve({
-          success: true,
-          data: [
-            { id: '101', name: 'Canal de Notícias', category: 'Jornalismo', logo: 'url1', streamUrl: 'url1' },
-            { id: '102', name: 'Canal de Esportes', category: 'Esportes', logo: 'url2', streamUrl: 'url2' },
-            { id: '103', name: 'Outro de Esportes', category: 'Esportes', logo: 'url3', streamUrl: 'url3' },
-          ],
-        }),
-      });
-
+       fetch.mockImplementation(url => {
+        if (url === `${API_BASE_URL}/channels`) {
+            return Promise.resolve({ ok: true, json: () => Promise.resolve({
+                data: [
+                    { id: '101', name: 'Canal de Notícias', category: 'Notícias', logo: 'url1', streamUrl: 'url1' },
+                    { id: '102', name: 'Canal de Esportes Mock', category: 'Esportes', logo: 'url2', streamUrl: 'url2' },
+                ],
+            }) });
+        }
+        if (url === `${API_BASE_URL}/sports`) {
+            return Promise.resolve({ ok: true, json: () => Promise.resolve({ data: [] }) });
+        }
+        return Promise.resolve({ ok: false });
+    });
       const { findByText, getByText, queryByText } = render(<App />);
 
-      // Avança o timer do debounce inicial
-      act(() => { jest.advanceTimersByTime(500); });
+      await advanceTimersAndPassSplash();
 
       // Verifica se todos os canais estão visíveis inicialmente
       expect(await findByText('Canal de Notícias')).toBeTruthy();
-      expect(await findByText('Canal de Esportes')).toBeTruthy();
-      expect(await findByText('Outro de Esportes')).toBeTruthy();
+      expect(await findByText('Canal de Esportes Mock')).toBeTruthy();
+      expect(await findByText('BandSports')).toBeTruthy(); // Canal estático de Esportes
 
-      // Abre o dropdown de categorias (o botão mostra "Todos" inicialmente)
+      // Abre o dropdown de categorias
       const dropdownButton = getByText('Todos');
       fireEvent.press(dropdownButton);
 
@@ -210,8 +234,8 @@ describe('<App />', () => {
       await waitFor(() => {
         expect(queryByText('Canal de Notícias')).toBeNull();
       });
-      expect(queryByText('Canal de Esportes')).toBeTruthy();
-      expect(queryByText('Outro de Esportes')).toBeTruthy();
+      expect(queryByText('Canal de Esportes Mock')).toBeTruthy();
+      expect(queryByText('BandSports')).toBeTruthy(); // Canal estático deve permanecer
 
       // Seleciona "Todos" para voltar ao estado inicial
       fireEvent.press(getByText('Esportes'));

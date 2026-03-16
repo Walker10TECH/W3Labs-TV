@@ -394,6 +394,7 @@ const staticChannels = [
   ];
 
 const AppContent = () => {
+  const [isSplashVisible, setIsSplashVisible] = useState(true);
   const [items, setItems] = useState([]);
   const [activeItem, setActiveItem] = useState(null);
   const [isTuning, setIsTuning] = useState(false);
@@ -439,6 +440,11 @@ const AppContent = () => {
   const insets = useSafeAreaInsets();
   const { width, height } = useWindowDimensions();
   const isLandscape = width > height;
+
+  useEffect(() => {
+    const splashTimer = setTimeout(() => setIsSplashVisible(false), 4000); // 4 seconds for splash
+    return () => clearTimeout(splashTimer);
+  }, []);
 
   const widthRef = useRef(width);
   useEffect(() => { widthRef.current = width; }, [width]);
@@ -1003,6 +1009,20 @@ const AppContent = () => {
     );
   };
 
+  if (isSplashVisible) {
+    return (
+      <View style={styles.splashContainer}>
+        <StatusBar hidden />
+        <Image
+          // Certifique-se de ter o arquivo "tv.gif" dentro de uma pasta "assets" na raiz do seu projeto.
+          source={require('./assets/tv.gif')}
+          style={styles.splashImage}
+          resizeMode="cover"
+        />
+      </View>
+    );
+  }
+
   return (
     <View style={styles.container}>
       <StatusBar barStyle="light-content" translucent backgroundColor="#000" hidden={isLandscape && Platform.OS !== 'web'} />
@@ -1111,6 +1131,16 @@ export default function App() {
 }
 
 const styles = StyleSheet.create({
+  splashContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#000',
+  },
+  splashImage: {
+    width: '100%',
+    height: '100%',
+  },
   container: { flex: 1, backgroundColor: '#000' },
   adBannerContainer: {
     width: '100%',
