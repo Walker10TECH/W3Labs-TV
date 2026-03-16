@@ -34,6 +34,10 @@
     "plugins": [
       "expo-audio",
       "react-native-google-cast"
-    ]
+    ],
+    "react-native-google-mobile-ads": {
+      "android_app_id": "ca-app-pub-5064368958997852~5867816023",
+      "ios_app_id": "ca-app-pub-5064368958997852~5867816023"
+    }
   }
 }
