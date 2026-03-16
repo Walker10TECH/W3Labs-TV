@@ -105,76 +105,31 @@ const ExpoNativePlayer = ({ streamUrl }) => {
   );
 };
 
-const ADSTERRA_API_KEY = '82e48754817fbcaf08d478de3b4f0b72'; // TODO: Replace with your actual Adsterra API key
-const ADSTERRA_API_BASE_URL = 'https://api3.adsterratools.com/publisher';
-
 const AdsterraBanner = () => {
-  // Default/fallback key. This will be used if the API call fails or doesn't return a suitable placement.
-  const [placementKey, setPlacementKey] = useState('82e48754817fbcaf08d478de3b4f0b72');
-
-  /**
-   * The Adsterra Publisher API (as per the provided documentation) is primarily for statistics
-   * and does not seem to provide the full ad placement script or the unique placement hash/key directly.
-   * Ad codes are typically obtained from the Adsterra dashboard.
-   *
-   * The function below serves as a placeholder to demonstrate how you would fetch placements
-   * if the API were to provide the necessary ad key.
-   */
-  useEffect(() => {
-    const fetchAdPlacement = async () => {
-      // Do not run this fetch if we don't have a real API key.
-      if (ADSTERRA_API_KEY === '82e48754817fbcaf08d478de3b4f0b72') {
-        console.log('AdsterraBanner: Please configure your ADSTERRA_API_KEY to fetch placements dynamically.');
-        return;
-      }
-
-      try {
-        const response = await fetch(`${ADSTERRA_API_BASE_URL}/placements.json`, {
-          headers: {
-            'Accept': 'application/json',
-            'X-API-Key': ADSTERRA_API_KEY,
-          }
-        });
-
-        if (!response.ok) {
-          throw new Error(`Adsterra API request failed with status ${response.status}`);
-        }
-
-        const data = await response.json();
-        
-        // Example logic: find a suitable banner placement from the response.
-        // We might rely on the 'title' or 'alias' to identify the correct ad unit.
-        const bannerPlacement = data.items?.find(p => p.alias?.includes('728x90'));
-
-        // IMPORTANT: The API docs do not show a `hash` or `key` property that matches the one
-        // used in the script ('82e48754817fbcaf08d478de3b4f0b72').
-        // We are assuming it would be available under a property like `placement.hash`.
-        if (bannerPlacement && bannerPlacement.hash) {
-          setPlacementKey(bannerPlacement.hash);
-        } else {
-          console.warn('AdsterraBanner: Could not find a suitable banner placement with a hash from the API. Using fallback.');
-        }
-
-      } catch (e) {
-        console.error('AdsterraBanner: Failed to fetch ad placement:', e);
-      }
-    };
-
-    // fetchAdPlacement(); // Uncomment this line to enable dynamic fetching.
-  }, []);
+  const placementKey = 'cadc4519250e9bfdbff8169ef633f2e7';
 
   const adHtml = `
     <!DOCTYPE html>
     <html>
     <head>
       <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-      <style> body, html { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background-color: transparent; display: flex; justify-content: center; align-items: center; } </style>
+      <style>
+        body, html { 
+          margin: 0; 
+          padding: 0; 
+          width: 100%; 
+          height: 100%; 
+          overflow: hidden; 
+          background-color: transparent; 
+          display: flex; 
+          justify-content: center; 
+          align-items: center; 
+        }
+      </style>
     </head>
     <body>
-      <script type="text/javascript">
-        atOptions = { 'key' : '${placementKey}', 'format' : 'iframe', 'height' : 90, 'width' : 728, 'params' : {} };
-        document.write('<scr' + 'ipt type="text/javascript" src="//pl23009999.highcpmgate.com/${placementKey}/invoke.js"></scr' + 'ipt>');
-      </script>
+      <script async="async" data-cfasync="false" src="//pl28930227.effectivegatecpm.com/${placementKey}/invoke.js"></script>
+      <div id="container-${placementKey}"></div>
     </body>
     </html>
   `;
@@ -185,7 +140,14 @@ const AdsterraBanner = () => {
 
   return (
     <View style={styles.adBannerContainer}>
-      <WebView originWhitelist={['*']} source={{ html: adHtml }} style={styles.adWebView} scrollEnabled={false} javaScriptEnabled={true} domStorageEnabled={true} />
+      <WebView
+        originWhitelist={['*']}
+        source={{ html: adHtml }}
+        style={styles.adWebView}
+        scrollEnabled={false}
+        javaScriptEnabled={true}
+        domStorageEnabled={true}
+      />
     </View>
   );
 };
