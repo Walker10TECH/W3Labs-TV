@@ -2,7 +2,7 @@ import React from 'react';
 import { render, fireEvent, waitFor, act } from '@testing-library/react-native';
 import App from '../App';
 // --- Mocks ---
-jest.mock('../assets/tv.gif', () => 'tv.gif');
+jest.mock('../assets/LABS.gif', () => 'LABS.gif');
 
 // Mock da API fetch
 global.fetch = jest.fn();
@@ -124,7 +124,7 @@ describe('<App />', () => {
       await waitFor(() => expect(fetch).toHaveBeenCalledTimes(2));
 
       // Simula a digitação no campo de busca
-      const searchInput = getByPlaceholderText(/Buscar canal ou evento/i);
+      const searchInput = getByPlaceholderText(/Buscar canal.../i);
       fireEvent.changeText(searchInput, 'Filmes');
 
       // Avança o timer do debounce da busca
@@ -152,6 +152,19 @@ describe('<App />', () => {
 
   // --- Testes para a função tuneChannel ---
   describe('tuneChannel Functionality', () => {
+    it('deve sintonizar automaticamente o primeiro canal da lista ao carregar', async () => {
+      const { findByText } = render(<App />);
+      
+      await advanceTimersAndPassSplash();
+
+      // O primeiro canal da lista combinada (estáticos + API) é 'BandSports'.
+      // O useEffect de auto-sintonização deve chamar tuneChannel com este item.
+      // Verificamos se o título no player reflete isso.
+      // Este teste valida que o `activeItem` inicial é definido corretamente.
+      const playerTitle = await findByText('BandSports');
+      expect(playerTitle).toBeTruthy();
+    });
+
     it('deve sintonizar um novo canal ao ser pressionado', async () => {
       const { getByText, findByText, queryByText } = render(<App />);
       

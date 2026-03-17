@@ -3,7 +3,7 @@
     "name": "W3Labs-TV",
     "slug": "W3Labs-TV",
     "version": "1.0.0",
-    "orientation": "portrait",
+    "orientation": "default",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
@@ -21,7 +21,8 @@
         "backgroundColor": "#ffffff"
       },
       "edgeToEdgeEnabled": true,
-      "package": "com.w3labs.br.tv"
+      "package": "com.w3labs.br.tv",
+      "orientation": "landscape"
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -33,7 +34,14 @@
     },
     "plugins": [
       "expo-audio",
-      "react-native-google-cast"
+      [
+        "react-native-google-cast",
+        {
+          "receiverAppId": "CC1AD845",
+          "expandedController": true
+        }
+      ],
+      "expo-video"
     ],
     "react-native-google-mobile-ads": {
       "android_app_id": "ca-app-pub-5064368958997852~5867816023",
