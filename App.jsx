@@ -5,6 +5,7 @@ import { useVideoPlayer, VideoView } from 'expo-video';
 import {
   Cast,
   ChevronDown,
+  ChevronUp,
   ExternalLink,
   Menu,
   MonitorPlay,
@@ -16,8 +17,10 @@ import {
   Search,
   Sun,
   Tv as TvIcon,
+  Volume1,
   Volume2,
-  VolumeX
+  VolumeX,
+  X
 } from 'lucide-react-native';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
@@ -114,26 +117,6 @@ const ExpoNativePlayer = ({ streamUrl, isPaused, volume, playerRef }) => {
 };
 
 // --- Banners e Metadados COMPLETOS ---
-
-const AdsterraBanner = () => {
-  const placementKey = 'cadc4519250e9bfdbff8169ef633f2e7';
-  
-  // Exibe anúncios apenas na plataforma Web
-  if (Platform.OS === 'web') {
-    return (
-      <View style={styles.adBannerContainer}>
-        {React.createElement('iframe', {
-          src: `//pl28930227.effectivegatecpm.com/${placementKey}/invoke.js`,
-          style: { width: '100%', height: '100%', border: 'none' },
-          scrolling: "no"
-        })}
-      </View>
-    );
-  }
-
-  // Anúncios desabilitados nas plataformas móveis.
-  return null;
-};
 
 const API_BASE_URL = 'https://api.reidoscanais.ooo';
 const CHROMECAST_RECEIVER_APP_ID = 'CC1AD845';
@@ -373,42 +356,6 @@ const staticChannels = [
   { id: 'static-95-cnnbrasil', name: 'CNN Brasil', category: 'Notícias', image: 'https://upload.wikimedia.org/wikipedia/commons/thumb/f/fb/CNN_Brasil_logo.svg/512px-CNN_Brasil_logo.svg.png', streamUrl: 'https://www2.embedtv.best/cnnbrasil', type: 'channel' },
 ];
 
-const CategoryPicker = ({ categories, selectedCategory, onSelect, isVisible, onClose }) => {
-  const insets = useSafeAreaInsets();
-
-  return (
-    <Modal
-      transparent={true}
-      animationType="fade"
-      visible={isVisible}
-      onRequestClose={onClose}
-    >
-      <TouchableOpacity style={StyleSheet.absoluteFill} activeOpacity={1} onPress={onClose}>
-        <BlurView
-          style={StyleSheet.absoluteFill}
-          tint="dark"
-          intensity={50}
-        />
-      </TouchableOpacity>
-      <View style={[styles.categoryPickerContainer, { paddingTop: insets.top + 20, paddingBottom: insets.bottom + 20 }]}>
-        <Text style={styles.categoryPickerTitle}>Categorias</Text>
-        <FlatList
-          data={categories}
-          keyExtractor={item => item}
-          renderItem={({ item: categoryItem }) => (
-            <TouchableOpacity
-              style={styles.categoryPickerItem}
-              onPress={() => { onSelect(categoryItem); onClose(); }}
-            >
-              <Text style={[styles.categoryPickerItemText, selectedCategory === categoryItem && styles.categoryPickerItemTextActive]}>{categoryItem}</Text>
-            </TouchableOpacity>
-          )}
-        />
-      </View>
-    </Modal>
-  );
-};
-
 // --- Componente Principal ---
 
 const AppContent = () => {
@@ -421,7 +368,6 @@ const AppContent = () => {
   const [retryCount, setRetryCount] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [isEpgVisible, setIsEpgVisible] = useState(true);
   const [areControlsVisible, setAreControlsVisible] = useState(true);
   const [isPaused, setIsPaused] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
@@ -429,10 +375,9 @@ const AppContent = () => {
   const nativePlayerRef = useRef(null);
   const [categories, setCategories] = useState(['Todos']);
   const [selectedCategory, setSelectedCategory] = useState('Todos');
-  const [isCategoryPickerVisible, setIsCategoryPickerVisible] = useState(false);
+  const [isSidebarVisible, setIsSidebarVisible] = useState(true);
   
   // Hooks do Google Cast.
-  // Graças ao fallback no nível do módulo, estas chamadas são seguras em qualquer plataforma.
   const nativeCastState = useCastState();
   const client = useRemoteMediaClient();
   const nativeCastDevice = useCastDevice();
@@ -450,6 +395,11 @@ const AppContent = () => {
   const [brightness, setBrightness] = useState(0.5);
   const [gestureState, setGestureState] = useState({ visible: false, icon: null, value: 0, label: '' });
   
+  // -- NOVOS ESTADOS PARA A BARRA INFERIOR --
+  const [isBottomBarVisible, setIsBottomBarVisible] = useState(true);
+  const [barHeight, setBarHeight] = useState(150); // Valor inicial aproximado
+  const bottomBarTranslateY = useRef(new Animated.Value(0)).current;
+
   const volumeRef = useRef(0.5); 
   const brightnessRef = useRef(0.5); 
   const hideGestureTimeout = useRef(null);
@@ -462,8 +412,10 @@ const AppContent = () => {
 
   const insets = useSafeAreaInsets();
   const { width, height } = useWindowDimensions();
-  const isLandscape = width > height;
-  const isTablet = width > 768;
+  
+  // Variáveis reativas para design Mobile sem afetar TV Box
+  const isPortrait = height > width;
+  const isSmallScreen = width < 600;
 
   useEffect(() => {
     const splashTimer = setTimeout(() => setIsSplashVisible(false), 3000);
@@ -540,13 +492,7 @@ const AppContent = () => {
     }
   };
 
-  useEffect(() => {
-    const shouldBeMuted = volume === 0;
-    if (isMuted !== shouldBeMuted) setIsMuted(shouldBeMuted);
-    volumeRef.current = volume;
-  }, [volume]);
-
-  // Lógica NATIVA de Gestos
+  // Lógica NATIVA de Gestos PELA TELA
   const panResponder = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: () => true,
@@ -584,6 +530,26 @@ const AppContent = () => {
       }
     })
   ).current;
+
+  // -- LOGICA DO BOTÃO REDONDO PARA OCULTAR/MOSTRAR A BARRA --
+  const toggleBottomBar = () => {
+    if (isBottomBarVisible) {
+      // Oculta a barra empurrando exatamente o valor da altura dela
+      Animated.timing(bottomBarTranslateY, {
+        toValue: barHeight, 
+        duration: 300,
+        useNativeDriver: true,
+      }).start(() => setIsBottomBarVisible(false));
+    } else {
+      // Mostra a barra novamente
+      setIsBottomBarVisible(true);
+      Animated.timing(bottomBarTranslateY, {
+        toValue: 0,
+        duration: 300,
+        useNativeDriver: true,
+      }).start();
+    }
+  };
 
   // Inicialização SDK Web Cast
   useEffect(() => {
@@ -837,7 +803,9 @@ const AppContent = () => {
     if (Platform.OS !== 'web') {
       setAreControlsVisible(true);
     }
-  }, [activeItem]);
+    // Mobile touch overlay handler: se em modo retrato, fechar a sidebar após escolher
+    if (isSmallScreen && isSidebarVisible) setIsSidebarVisible(false);
+  }, [activeItem, isSmallScreen, isSidebarVisible]);
 
   const handleForcePiP = () => {
     if (Platform.OS === 'web') return;
@@ -849,29 +817,26 @@ const AppContent = () => {
     }
   };
 
-  const renderEpgItem = useCallback(({ item }) => {
+  const renderChannelItem = useCallback(({ item }) => {
     const isActive = activeItem?.id === item.id;
     return (
-      <TouchableOpacity activeOpacity={0.8} onPress={() => tuneChannel(item)} style={styles.epgItemTouchable}>
-        <View style={[styles.epgItem, isActive && styles.epgItemActive]}>
-          <View style={styles.epgItemLogoContainer}>
-            {item.image ? <Image source={{ uri: item.image }} style={styles.epgItemLogo} resizeMode="contain" /> : <TvIcon size={24} color="#666" />}
-          </View>
-          <View style={styles.epgItemTextContainer}>
-            <Text style={[styles.epgItemName, isActive && styles.epgItemNameActive]} numberOfLines={1}>{item.name}</Text>
-            <Text style={styles.epgItemCategory} numberOfLines={1}>{item.category} • HD</Text>
-          </View>
-          {isActive ? (
+      <TouchableOpacity activeOpacity={0.8} onPress={() => tuneChannel(item)} style={[styles.channelItem, isSmallScreen && { width: 90, height: 90 }]}>
+        <BlurView intensity={90} tint="dark" style={[styles.channelItemInner, isActive && styles.channelItemActive]}>
+          {item.image ? (
+            <Image source={{ uri: item.image }} style={styles.channelLogo} resizeMode="contain" />
+          ) : (
+            <TvIcon size={isSmallScreen ? 24 : 32} color="#888" />
+          )}
+          <Text style={[styles.channelName, isSmallScreen && { fontSize: 10 }]} numberOfLines={2}>{item.name}</Text>
+          {isActive && (
             <View style={styles.playingIndicator}>
-              <Animated.View style={[styles.playingBar, { transform: [{ scaleY: pulseAnim }] }]} />
-              <View style={[styles.playingBar, { height: 6 }]} />
-              <Animated.View style={[styles.playingBar, { transform: [{ scaleY: tuningAnim }] }]} />
+              <Volume1 size={16} color="#fff" />
             </View>
-          ) : <PlayCircle size={24} color="#333" />}
-        </View>
+          )}
+        </BlurView>
       </TouchableOpacity>
     );
-  }, [activeItem, tuneChannel, pulseAnim, tuningAnim]);
+  }, [activeItem, tuneChannel, isSmallScreen]);
 
   const renderPlayer = (layoutStyle) => {
     const isNativeStream = isDirectStream(activeItem?.streamUrl);
@@ -886,10 +851,9 @@ const AppContent = () => {
             </View>
           ) : isCasting ? (
              <View style={[styles.centerContent, { backgroundColor: '#0a0a0a' }]}>
-                <MonitorPlay size={100} color="#E3262E" />
-                <Text style={styles.castTitle}>Transmitindo para {castDeviceName}</Text>
+                <MonitorPlay size={isSmallScreen ? 60 : 100} color="#E3262E" />
+                <Text style={[styles.castTitle, isSmallScreen && { fontSize: 16 }]}>Transmitindo para {castDeviceName}</Text>
              </View>
-          // CORREÇÃO: Usando a verificação de Web corretamente chamando o <WebVideoPlayer />
           ) : !isTuning && isNativeStream && Platform.OS !== 'web' ? (
             <ExpoNativePlayer playerRef={nativePlayerRef} streamUrl={activeItem.streamUrl} isPaused={isPaused} volume={volume} />
           ) : !isTuning && Platform.OS === 'web' ? (
@@ -917,28 +881,28 @@ const AppContent = () => {
         {/* Sobreposição de Interface do Player NATIVA */}
         {!isTuning && !isCasting && areControlsVisible && activeItem && (
           <View style={styles.playerControlsContainer} pointerEvents="box-none">
-            {Platform.OS === 'web' ? <LinearGradient colors={['rgba(0,0,0,0.6)', 'transparent']} style={styles.controlsGradientTop} /> : <BlurView tint="dark" intensity={50} style={styles.controlsGradientTop} />}
-            <View style={[styles.topControls, { paddingTop: isLandscape ? 16 : Math.max(insets.top, 16) }]}>
+            <LinearGradient colors={['rgba(0,0,0,0.7)', 'transparent']} style={styles.controlsGradientTop} />
+            <View style={[styles.topControls, { paddingTop: Math.max(insets.top, 16) }]}>
               <View style={styles.playerTitleContainer}>
-                <Text style={styles.playerTitle} numberOfLines={1}>{activeItem?.name}</Text>
-                <View style={styles.liveBadge}><Text style={styles.liveBadgeText}>AO VIVO</Text></View>
+                <Text style={[styles.playerTitle, isSmallScreen && { fontSize: 14 }]} numberOfLines={1}>{activeItem?.name}</Text>
+                <View style={styles.liveBadge}><Text style={[styles.liveBadgeText, isSmallScreen && { fontSize: 10 }]}>AO VIVO</Text></View>
               </View>
             </View>
 
             {Platform.OS !== 'web' && (
               <View style={styles.centerControls} pointerEvents="box-none">
                  <TouchableOpacity style={styles.playPauseButton} onPress={togglePlayPause}>
-                  {isPaused ? <Play size={isTablet ? 64 : 48} color="#fff" fill="#fff" /> : <Pause size={isTablet ? 64 : 48} color="#fff" fill="#fff" />}
+                  {isPaused ? <Play size={isSmallScreen ? 36 : 48} color="#fff" fill="#fff" /> : <Pause size={isSmallScreen ? 36 : 48} color="#fff" fill="#fff" />}
                  </TouchableOpacity>
               </View>
             )}
 
-            {Platform.OS === 'web' ? <LinearGradient colors={['transparent', 'rgba(0,0,0,0.8)']} style={styles.controlsGradientBottom} /> : <BlurView tint="dark" intensity={60} style={styles.controlsGradientBottom} />}
+            <LinearGradient colors={['transparent', 'rgba(0,0,0,0.9)']} style={styles.controlsGradientBottom} />
             
-            <View style={[styles.bottomControls, { paddingBottom: isLandscape ? 16 : Math.max(insets.bottom, 16) }]}>
+            <View style={[styles.bottomControls, { paddingBottom: Math.max(insets.bottom, 16) }]}>
               {Platform.OS !== 'web' && (
                 <TouchableOpacity onPress={toggleMute} style={styles.controlButton}>
-                  {isMuted ? <VolumeX size={24} color="#fff" /> : <Volume2 size={24} color="#fff" />}
+                  {isMuted ? <VolumeX size={isSmallScreen ? 20 : 24} color="#fff" /> : <Volume2 size={isSmallScreen ? 20 : 24} color="#fff" />}
                 </TouchableOpacity>
               )}
               
@@ -946,27 +910,21 @@ const AppContent = () => {
 
               {Platform.OS === 'web' ? (
                 <TouchableOpacity onPress={handleWebCastAction} style={styles.controlButton}>
-                  <Cast size={24} color={isCasting ? '#E3262E' : '#fff'} />
+                  <Cast size={isSmallScreen ? 20 : 24} color={isCasting ? '#E3262E' : '#fff'} />
                 </TouchableOpacity>
               ) : (
-                <CastButton style={[styles.controlButton, { tintColor: isCasting ? '#E3262E' : '#fff', width: 40, height: 40 }]} />
+                <CastButton style={[styles.controlButton, { tintColor: isCasting ? '#E3262E' : '#fff', width: isSmallScreen ? 35 : 40, height: isSmallScreen ? 35 : 40 }]} />
               )}
 
               {Platform.OS !== 'web' && (
                 <TouchableOpacity onPress={handleForcePiP} style={styles.controlButton}>
-                  <PictureInPicture size={24} color="#fff" />
+                  <PictureInPicture size={isSmallScreen ? 20 : 24} color="#fff" />
                 </TouchableOpacity>
               )}
 
               <TouchableOpacity style={styles.controlButton} onPress={() => Linking.openURL(activeItem.streamUrl)}>
-                <ExternalLink size={24} color="#fff" />
+                <ExternalLink size={isSmallScreen ? 20 : 24} color="#fff" />
               </TouchableOpacity>
-
-              {isLandscape && !isTablet && (
-                <TouchableOpacity onPress={() => setIsEpgVisible(v => !v)} style={styles.controlButton}>
-                  <Menu size={24} color="#fff" />
-                </TouchableOpacity>
-              )}
             </View>
           </View>
         )}
@@ -977,7 +935,7 @@ const AppContent = () => {
               <ActivityIndicator size="large" color="#E3262E" />
               <View style={styles.tuningBadge}>
                 <Text style={styles.tuningText}>SINTONIZANDO</Text>
-                <Text style={styles.tuningChannel}>{activeItem?.name.toUpperCase()}</Text>
+                <Text style={[styles.tuningChannel, isSmallScreen && { fontSize: 18 }]}>{activeItem?.name.toUpperCase()}</Text>
               </View>
             </View>
           </Animated.View>
@@ -991,8 +949,8 @@ const AppContent = () => {
         {/* Indicador Visual do Gesto */}
         {gestureState.visible && activeItem && Platform.OS !== 'web' && (
           <View style={styles.gestureIndicatorContainer} pointerEvents="none">
-            <View style={styles.gestureBox}>
-              {gestureState.icon === 'volume' ? <Volume2 size={32} color="#fff" /> : <Sun size={32} color="#fff" />}
+            <View style={[styles.gestureBox, isSmallScreen && { width: 120, height: 100 }]}>
+              {gestureState.icon === 'volume' ? <Volume2 size={isSmallScreen ? 24 : 32} color="#fff" /> : <Sun size={isSmallScreen ? 24 : 32} color="#fff" />}
               <Text style={styles.gestureLabel}>{gestureState.label} {Math.round(gestureState.value * 100)}%</Text>
               <View style={styles.gestureBarBg}>
                 <View style={[styles.gestureBarFill, { width: `${gestureState.value * 100}%` }]} />
@@ -1008,10 +966,10 @@ const AppContent = () => {
     return (
       <View style={styles.splashContainer}>
         <StatusBar hidden />
-        <Image
-          source={require('./assets/LABS.gif')}
+        <Image 
+          source={Platform.OS === 'web' ? require('./assets/tv.gif') : require('./assets/LABS.gif')}
           style={styles.splashImage}
-          resizeMode="cover"
+          resizeMode="contain"
         />
       </View>
     );
@@ -1019,66 +977,88 @@ const AppContent = () => {
 
   return (
     <View style={styles.container}>
-      <StatusBar barStyle="light-content" translucent backgroundColor="#000" hidden={isLandscape && Platform.OS !== 'web'} />
-      <View style={[styles.responsiveLayout, { flexDirection: isLandscape ? 'row' : 'column', paddingTop: !isLandscape ? insets.top : 0 }]}>
-        <View style={[styles.playerSection, isLandscape ? { flex: 1.8 } : {}]}>
-          {renderPlayer(isLandscape ? { flex: 1 } : { width: '100%', aspectRatio: 16 / 9 })}
-        </View>
-        
-        {(!isLandscape || isTablet || isEpgVisible) && (
-          <View style={[styles.epgSection, isLandscape ? { width: isTablet ? 380 : 320, borderLeftWidth: 1, borderColor: '#222' } : { flex: 1 }]}>
-            <View style={styles.epgContentWrapper}>
-              <View style={styles.searchBarContainer}>
-                <View style={styles.searchInputWrapper}>
-                  <Search size={20} color="#888" style={{ marginLeft: 12 }}/>
-                  <TextInput
-                    style={styles.searchInput}
-                    placeholder="Buscar canal..."
-                    placeholderTextColor="#888"
-                    value={searchQuery}
-                    onChangeText={setSearchQuery}
-                  />
-                </View>
-              </View>
-              
-              <View style={styles.epgHeader}>
-                <TouchableOpacity style={styles.refreshButton} onPress={() => { setRetryCount(0); setRefreshKey(prev => prev + 1); }}>
-                  <RefreshCw size={16} color="#ccc" />
-                  <Text style={styles.refreshText}>Atualizar</Text>
-                </TouchableOpacity>
+      <StatusBar barStyle="light-content" translucent backgroundColor="transparent" hidden={Platform.OS !== 'web' && !isPortrait} />
+      
+      {renderPlayer({ ...StyleSheet.absoluteFillObject })}
 
-                <View style={styles.categoryDropdownContainer}>
-                  <TouchableOpacity style={styles.categoryDropdownButton} onPress={() => setIsCategoryPickerVisible(true)}>
-                    <Text style={styles.categoryDropdownText} numberOfLines={1}>{selectedCategory}</Text>
-                    <ChevronDown size={16} color="#ccc" />
-                  </TouchableOpacity>
-                </View>
-              </View>
+      {isSidebarVisible && (
+        <View style={styles.sidebarContainer}>
+          <BlurView intensity={100} tint="dark" style={StyleSheet.absoluteFill} />
+          <View style={[styles.sidebar, { width: isSmallScreen ? width * 0.85 : 300, paddingTop: Math.max(insets.top, 16), paddingBottom: Math.max(insets.bottom, 16) }]}>
+            <View style={styles.sidebarHeader}>
+              <Image source={require('./assets/icon.png')} style={styles.sidebarLogo} />
+              <TouchableOpacity onPress={() => setIsSidebarVisible(false)} style={styles.sidebarCloseButton}>
+                <X size={24} color="#fff" />
+              </TouchableOpacity>
+            </View>
 
-              <FlatList
-                data={items}
-                keyExtractor={item => item.id.toString()}
-                renderItem={renderEpgItem}
-                style={styles.epgList}
-                showsVerticalScrollIndicator={false}
-                contentContainerStyle={{ paddingBottom: 16 }}
-                ListEmptyComponent={<Text style={styles.emptyText}>Nenhum canal encontrado.</Text>}
-              />
-              <View style={{ paddingHorizontal: 16, paddingTop: 10, paddingBottom: 6 }}>
-                <AdsterraBanner />
+            <View style={styles.searchBarContainer}>
+              <View style={styles.searchInputWrapper}>
+                <Search size={20} color="#888" style={{ marginLeft: 12 }}/>
+                <TextInput
+                  style={styles.searchInput}
+                  placeholder="Buscar..."
+                  placeholderTextColor="#888"
+                  value={searchQuery}
+                  onChangeText={setSearchQuery}
+                />
               </View>
             </View>
-          </View>
-        )}
 
-        <CategoryPicker
-          categories={categories}
-          selectedCategory={selectedCategory}
-          isVisible={isCategoryPickerVisible}
-          onClose={() => setIsCategoryPickerVisible(false)}
-          onSelect={setSelectedCategory}
-        />
-      </View>
+            <FlatList
+              data={categories}
+              keyExtractor={item => item}
+              renderItem={({ item: categoryItem }) => (
+                <TouchableOpacity
+                  style={[styles.categoryItem, selectedCategory === categoryItem && styles.categoryItemActive]}
+                  onPress={() => setSelectedCategory(categoryItem)}
+                >
+                  <Text style={styles.categoryItemText}>{categoryItem}</Text>
+                </TouchableOpacity>
+              )}
+              ListHeaderComponent={
+                <TouchableOpacity style={styles.refreshButton} onPress={() => { setRetryCount(0); setRefreshKey(prev => prev + 1); }}>
+                  <RefreshCw size={16} color="#ccc" />
+                  <Text style={styles.refreshText}>Atualizar Lista</Text>
+                </TouchableOpacity>}
+              style={styles.categoryList}
+            />
+          </View>
+        </View>
+      )}
+
+      {/* Margens inferiores dinâmicas com Animated.View controlada pelo Botão de Seta */}
+      <Animated.View 
+        style={[
+          styles.bottomContainerWrapper, 
+          { transform: [{ translateY: bottomBarTranslateY }] }
+        ]}
+      >
+        {/* BOTÃO REDONDO NO TOPO DA BARRA */}
+        <TouchableOpacity style={styles.toggleBarButton} onPress={toggleBottomBar}>
+           {isBottomBarVisible ? <ChevronUp size={28} color="#fff" /> : <ChevronDown size={28} color="#fff" />}
+        </TouchableOpacity>
+
+        {/* LISTA DE CANAIS COM CÁLCULO DE ALTURA AUTOMÁTICO */}
+        <View 
+          onLayout={(e) => setBarHeight(e.nativeEvent.layout.height)}
+          style={[styles.bottomBar, { paddingBottom: Math.max(insets.bottom, isSmallScreen ? 8 : 16), paddingLeft: Math.max(insets.left, 16) }]}
+        >
+          <TouchableOpacity onPress={() => setIsSidebarVisible(true)} style={[styles.menuButton, isSmallScreen && { padding: 8 }]}>
+            <Menu size={isSmallScreen ? 24 : 28} color="#fff" />
+          </TouchableOpacity>
+          <FlatList
+            data={items}
+            keyExtractor={item => item.id.toString()}
+            renderItem={renderChannelItem}
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            style={styles.channelList}
+            contentContainerStyle={{ paddingHorizontal: 16 }}
+            ListEmptyComponent={<Text style={styles.emptyText}>Nenhum canal encontrado.</Text>}
+          />
+        </View>
+      </Animated.View>
     </View>
   );
 }
@@ -1093,67 +1073,82 @@ export default function App() {
 
 const styles = StyleSheet.create({
   splashContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#000' },
-  splashImage: { width: '100%', height: '100%' },
+  splashImage: { width: '100%', height: '100%', resizeMode: 'contain' },
   container: { flex: 1, backgroundColor: '#000' },
-  responsiveLayout: { flex: 1, backgroundColor: '#000' },
-  playerSection: { backgroundColor: '#000', zIndex: 10, elevation: 10 },
-  epgSection: { backgroundColor: '#111' },
-  playerContentWrapper: { position: 'relative', overflow: 'hidden', width: '100%', backgroundColor: '#000' },
+  playerContentWrapper: { ...StyleSheet.absoluteFillObject, zIndex: 0 },
   videoContainer: { ...StyleSheet.absoluteFillObject, zIndex: 0 },
   webview: { flex: 1, backgroundColor: '#000' },
   centerContent: { flex: 1, justifyContent: 'center', alignItems: 'center', width: '100%', height: '100%' },
   loadingText: { color: '#E3262E', marginTop: 16, fontSize: 13, letterSpacing: 2, fontWeight: 'bold' },
-  tuningOverlay: { ...StyleSheet.absoluteFillObject, zIndex: 10 },
+  tuningOverlay: { ...StyleSheet.absoluteFillObject, zIndex: 30 },
   tuningBadge: { backgroundColor: 'transparent', marginTop: 16, alignItems: 'center' },
   tuningText: { color: '#fff', fontSize: 12, letterSpacing: 2, marginBottom: 4 },
   tuningChannel: { color: '#E3262E', fontSize: 22, fontWeight: '900', letterSpacing: 1 },
-  epgContentWrapper: { flex: 1, backgroundColor: '#000' },
-  searchBarContainer: { padding: 16, backgroundColor: '#000', borderBottomWidth: 1, borderColor: '#222' },
-  searchInputWrapper: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#1A1A1A', borderRadius: 8, height: 44 },
+  sidebarContainer: { ...StyleSheet.absoluteFillObject, zIndex: 100, flexDirection: 'row' },
+  sidebar: { backgroundColor: 'transparent' }, 
+  sidebarHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16, borderBottomWidth: 1, borderColor: 'rgba(255,255,255,0.1)' },
+  sidebarLogo: { width: 120, height: 40, resizeMode: 'contain' },
+  sidebarCloseButton: { padding: 8 },
+  searchBarContainer: { padding: 16 },
+  searchInputWrapper: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: 8, height: 44 },
   searchInput: { flex: 1, height: '100%', paddingHorizontal: 12, color: '#fff', fontSize: 15 },
-  epgHeader: { flexDirection: 'row', padding: 16, paddingTop: 0, backgroundColor: '#000', borderBottomWidth: 1, borderColor: '#222', gap: 16, alignItems: 'center', zIndex: 100 },
-  refreshButton: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: '#252525', paddingVertical: 12, borderRadius: 8, gap: 8 },
+  categoryList: { flex: 1 },
+  categoryItem: { paddingVertical: 16, paddingHorizontal: 24, borderLeftWidth: 4, borderColor: 'transparent' },
+  categoryItemActive: { borderColor: '#E3262E', backgroundColor: 'rgba(227, 38, 46, 0.1)' },
+  categoryItemText: { color: '#aaa', fontSize: 16, fontWeight: '500' },
+  refreshButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.1)', margin: 16, paddingVertical: 12, borderRadius: 8, gap: 8 },
   refreshText: { color: '#ccc', fontSize: 14, fontWeight: '500' },
-  categoryDropdownContainer: { flex: 1, position: 'relative', zIndex: 200 },
-  categoryDropdownButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#252525', paddingVertical: 12, paddingHorizontal: 16, borderRadius: 8, gap: 8 },
-  categoryDropdownText: { color: '#ccc', fontSize: 14, fontWeight: '500', flex: 1 },
-  categoryPickerBackdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.5)' },
-  categoryPickerContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  categoryPickerTitle: { fontSize: 24, fontWeight: 'bold', color: '#fff', marginBottom: 20 },
-  categoryPickerItem: { paddingVertical: 16, width: 250, alignItems: 'center' },
-  categoryPickerItemText: { color: '#aaa', fontSize: 18 },
-  categoryPickerItemTextActive: { color: '#E3262E', fontWeight: 'bold' },
-  epgList: { paddingHorizontal: 16, paddingTop: 10, zIndex: 10 },
-  epgItemTouchable: { marginBottom: 10 },
-  epgItem: { flexDirection: 'row', alignItems: 'center', padding: 12, borderRadius: 12, backgroundColor: '#181818', borderWidth: 1, borderColor: 'transparent' },
-  epgItemActive: { backgroundColor: '#282828', borderColor: '#E3262E' },
-  epgItemLogoContainer: { width: 56, height: 40, backgroundColor: '#000', justifyContent: 'center', alignItems: 'center', borderRadius: 4 },
-  epgItemLogo: { width: '80%', height: '80%' },
-  epgItemTextContainer: { flex: 1, marginLeft: 14 },
-  epgItemName: { color: '#ccc', fontSize: 15, fontWeight: '600' },
-  epgItemNameActive: { color: '#fff', fontWeight: 'bold' },
-  epgItemCategory: { color: '#666', fontSize: 12, marginTop: 4 },
-  playingIndicator: { flexDirection: 'row', alignItems: 'flex-end', height: 18, width: 24, justifyContent: 'space-between', paddingHorizontal: 2 },
-  playingBar: { width: 4, backgroundColor: '#E3262E', borderRadius: 2, height: 16 },
+  
+  // -- Novo Contêiner da Barra e do Botão Toggle --
+  bottomContainerWrapper: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    zIndex: 50,
+  },
+  toggleBarButton: {
+    alignSelf: 'center',
+    backgroundColor: 'rgba(227, 38, 46, 0.9)',
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 8, // Descola a seta um pouco da barra de canais
+    elevation: 5,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.5,
+    shadowRadius: 4,
+  },
+
+  bottomBar: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.6)' },
+  menuButton: { padding: 16 },
+  channelList: { flex: 1 },
+  channelItem: { width: 120, height: 120, marginHorizontal: 4, borderRadius: 8, overflow: 'hidden' },
+  channelItemInner: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 8, borderWidth: 2, borderColor: 'transparent', borderRadius: 8 },
+  channelItemActive: { borderColor: '#E3262E' },
+  channelLogo: { width: '60%', height: '60%' },
+  channelName: { color: '#fff', fontSize: 12, fontWeight: '500', textAlign: 'center', marginTop: 8 },
+  playingIndicator: { position: 'absolute', top: 6, right: 6, backgroundColor: '#E3262E', borderRadius: 20, padding: 4 },
   emptyText: { color: '#666', textAlign: 'center', padding: 30, fontSize: 14 },
   castTitle: { color: '#fff', fontSize: 20, fontWeight: 'bold', marginTop: 20 },
   playerControlsContainer: { ...StyleSheet.absoluteFillObject, zIndex: 20, justifyContent: 'center', alignItems: 'center' },
   controlsGradientTop: { position: 'absolute', top: 0, left: 0, right: 0, height: 100 },
-  controlsGradientBottom: { position: 'absolute', bottom: 0, left: 0, right: 0, height: 100 },
+  controlsGradientBottom: { position: 'absolute', bottom: 0, left: 0, right: 0, height: 150 },
   topControls: { position: 'absolute', top: 0, left: 0, right: 0, padding: 16, flexDirection: 'row', alignItems: 'center' },
   playerTitleContainer: { flexDirection: 'row', alignItems: 'center', gap: 10, flexShrink: 1 },
   playerTitle: { color: '#fff', fontSize: 18, fontWeight: 'bold', flexShrink: 1 },
   liveBadge: { backgroundColor: '#E3262E', borderRadius: 4, paddingHorizontal: 8, paddingVertical: 3 },
   liveBadgeText: { color: '#fff', fontSize: 12, fontWeight: 'bold' },
   centerControls: { ...StyleSheet.absoluteFillObject, justifyContent: 'center', alignItems: 'center' },
-  playPauseButton: { padding: 16, backgroundColor: 'rgba(0,0,0,0.6)', borderRadius: 60 },
+  playPauseButton: { padding: 16, backgroundColor: 'rgba(0,0,0,0.5)', borderRadius: 60 },
   bottomControls: { position: 'absolute', bottom: 0, left: 0, right: 0, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, gap: 16 },
   controlButton: { padding: 8 },
   gestureIndicatorContainer: { ...StyleSheet.absoluteFillObject, justifyContent: 'center', alignItems: 'center', zIndex: 50 },
-  gestureBox: { width: 140, height: 140, borderRadius: 16, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(20,20,20,0.8)', gap: 10 },
+  gestureBox: { width: 160, height: 140, borderRadius: 16, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(20,20,20,0.8)', gap: 10 },
   gestureLabel: { color: '#fff', fontSize: 12, fontWeight: 'bold' },
   gestureBarBg: { width: 80, height: 6, backgroundColor: 'rgba(255,255,255,0.2)', borderRadius: 3, overflow: 'hidden' },
   gestureBarFill: { height: '100%', backgroundColor: '#E3262E' },
-  adBannerContainer: { width: '100%', aspectRatio: 21 / 9, backgroundColor: '#000' },
-  adWebView: { flex: 1, backgroundColor: 'transparent' },
 });

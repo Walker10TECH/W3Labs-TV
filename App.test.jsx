@@ -2,6 +2,7 @@ import React from 'react';
 import { render, fireEvent, waitFor, act } from '@testing-library/react-native';
 import App from '../App';
 // --- Mocks ---
+jest.mock('../assets/tv.gif', () => 'tv.gif'); // Add mock for tv.gif
 jest.mock('../assets/LABS.gif', () => 'LABS.gif');
 
 // Mock da API fetch
