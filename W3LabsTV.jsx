@@ -35,7 +35,7 @@ const API_BASE_URL = 'https://api.reidoscanais.ooo';
 
 export default function App() {
   const { width, height } = useWindowDimensions();
-  const isDesktop = width >= 768; // Breakpoint 'md' do Tailwind
+  const isDesktop = width >= 1080; // Breakpoint 'md' do Tailwind
 
   // Estados Globais
   const [allChannels, setAllChannels] = useState([]);
