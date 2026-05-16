@@ -1,542 +1,736 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
+  StyleSheet,
+  View,
+  Text,
+  Image,
+  TextInput,
+  TouchableOpacity,
   ActivityIndicator,
   FlatList,
-  Image,
-  Platform,
-  StatusBar,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
   useWindowDimensions,
-  View,
+  Animated,
+  StatusBar,
+  Platform
 } from 'react-native';
-import { useVideoPlayer, VideoView } from 'expo-video';
-import { LinearGradient } from 'expo-linear-gradient';
-import { Home, Trophy, Tv as TvIcon, ChevronDown, ChevronUp } from 'lucide-react-native';
-import { SafeAreaProvider, SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { SafeAreaView, SafeAreaProvider } from 'react-native-safe-area-context';
+import { WebView } from 'react-native-webview';
+import { FontAwesome5 } from '@expo/vector-icons';
 
-// --- Mocks para bibliotecas externas ---
-let WebView = null;
-if (Platform.OS !== 'web') {
-  try {
-    WebView = require('react-native-webview').WebView;
-  } catch (e) {
-    console.warn('react-native-webview não instalado.');
-  }
-}
+// Tema e Cores equivalentes ao seu Tailwind
+const theme = {
+  bg: '#0f1115',
+  surface: '#1a1d24',
+  primary: '#e50914',
+  accent: '#3b82f6',
+  text: '#f8fafc',
+  muted: '#94a3b8',
+  black40: 'rgba(0, 0, 0, 0.4)',
+  white10: 'rgba(255, 255, 255, 0.1)',
+  white5: 'rgba(255, 255, 255, 0.05)',
+};
 
+// Configuração da API
 const API_BASE_URL = 'https://api.reidoscanais.ooo';
-const TMDB_API_KEY = '580c9a915fa5ab2e091ecd41ee0e16cb';
-const TMDB_IMAGE_BASE_URL = 'https://image.tmdb.org/t/p/w500';
 
-const isDirectStream = (url) => url?.includes('.m3u8') || url?.includes('.mp4');
+export default function App() {
+  const { width, height } = useWindowDimensions();
+  const isDesktop = width >= 768; // Breakpoint 'md' do Tailwind
 
-const NAV_ITEMS = [
-  { name: 'Home', icon: Home },
-  { name: 'Canais', icon: TvIcon },
-  { name: 'Esportes', icon: Trophy },
-];
-
-// ==========================================
-// 1. COMPONENTES DE PLAYER
-// ==========================================
-
-const WebVideoPlayer = ({ streamUrl }) => (
-  <iframe
-    src={streamUrl}
-    style={{ width: '100%', height: '100%', border: 'none', backgroundColor: '#000' }}
-    allow="autoplay; fullscreen; encrypted-media; picture-in-picture"
-    allowFullScreen
-  />
-);
-
-const IframePlayer = ({ streamUrl, webviewRef }) => {
+  // Estados Globais
+  const [allChannels, setAllChannels] = useState([]);
+  const [filteredChannels, setFilteredChannels] = useState([]);
+  const [allCategories, setAllCategories] = useState([]);
+  const [activeCategory, setActiveCategory] = useState('Todos');
+  
+  const [currentStream, setCurrentStream] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState(null);
-
-  if (!WebView) return <View style={styles.placeholderPlayer}><Text style={styles.errorText}>WebView indisponível</Text></View>;
-
-  const html = `<style>body, html, #player { margin: 0; padding: 0; width: 100%; height: 100%; background-color: #000; overflow: hidden; }</style>
-    <iframe id="player" src="${streamUrl}" frameborder="0" allow="autoplay; fullscreen" allowfullscreen="true"></iframe>`;
-
-  return (
-    <View style={styles.webviewContainer}>
-      <WebView
-        ref={webviewRef}
-        source={{ html, baseUrl: 'https://reidoscanais.ooo' }}
-        style={styles.webview}
-        allowsInlineMediaPlayback
-        allowsFullscreenVideo
-        javaScriptEnabled
-        domStorageEnabled
-        onLoadStart={() => setIsLoading(true)}
-        onLoadEnd={() => setIsLoading(false)}
-        onError={(e) => setError(e.nativeEvent.description)}
-        backgroundColor="#000"
-      />
-      {isLoading && <View style={styles.tuningOverlay}><ActivityIndicator size="large" color="#FFF" /></View>}
-      {error && <Text style={styles.errorText}>{error}</Text>}
-    </View>
-  );
-};
-
-const ExpoNativePlayer = ({ streamUrl, isPaused }) => {
-  const [isBuffering, setIsBuffering] = useState(true);
-  const player = useVideoPlayer(streamUrl, (p) => {
-    p.loop = false;
-    p.play();
-  });
+  
+  // UI States
+  const [isSidebarVisible, setIsSidebarVisible] = useState(true);
+  const [isSearchView, setIsSearchView] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState([]);
+  const [isSearching, setIsSearching] = useState(false);
+  
+  // Animação Toast
+  const toastAnim = useRef(new Animated.Value(100)).current;
+  const [toastMsg, setToastMsg] = useState('');
 
   useEffect(() => {
-    if (!player) return;
-    const statusSub = player.addListener('status', (s) => {
-      if (s.isLoaded) setIsBuffering(s.isBuffering);
+    loadInitialData();
+  }, []);
+
+  // Inicia o SDK do Chromecast na Web
+  useEffect(() => {
+    if (Platform.OS === 'web' && typeof window !== 'undefined') {
+      window.__onGCastApiAvailable = function(isAvailable) {
+        if (isAvailable && window.cast) {
+          window.cast.framework.CastContext.getInstance().setOptions({
+            receiverApplicationId: window.chrome.cast.media.DEFAULT_MEDIA_RECEIVER_APP_ID,
+            autoJoinPolicy: window.chrome.cast.AutoJoinPolicy.ORIGIN_SCOPED
+          });
+        }
+      };
+      const script = document.createElement('script');
+      script.src = 'https://www.gstatic.com/cv/js/sender/v1/cast_sender.js?loadCastFramework=1';
+      script.async = true;
+      document.body.appendChild(script);
+    }
+  }, []);
+
+  const showToast = (msg) => {
+    setToastMsg(msg);
+    Animated.sequence([
+      Animated.spring(toastAnim, { toValue: 0, useNativeDriver: true, speed: 20 }),
+      Animated.delay(3000),
+      Animated.timing(toastAnim, { toValue: 100, duration: 300, useNativeDriver: true })
+    ]).start();
+  };
+
+  const loadInitialData = async () => {
+    setIsLoading(true);
+    try {
+      const [channelsRes, catsRes] = await Promise.all([
+        fetch(`${API_BASE_URL}/channels`).then(res => res.json()),
+        fetch(`${API_BASE_URL}/channels/categories`).then(res => res.json())
+      ]);
+
+      const channelsData = Array.isArray(channelsRes) ? channelsRes : (channelsRes.data || []);
+      const catsData = catsRes.success ? catsRes.data : [];
+
+      setAllChannels(channelsData);
+      setFilteredChannels(channelsData);
+      setAllCategories(catsData);
+
+      if (channelsData.length > 0) {
+        playStream(channelsData[0]);
+      }
+    } catch (error) {
+      console.error(error);
+      showToast("Erro ao conectar com o servidor.");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const playStream = (channel) => {
+    const embedUrl = channel.embed_url || channel.streamUrl;
+    if (!embedUrl) {
+      showToast("Sinal indisponível.");
+      return;
+    }
+    setCurrentStream({
+      title: channel.name,
+      category: channel.category || 'TV',
+      logoUrl: channel.logo_url || channel.logo,
+      embedUrl: embedUrl,
     });
-    return () => statusSub.remove();
-  }, [player]);
+    
+    // Auto-oculta busca no mobile ao selecionar
+    if (!isDesktop && isSearchView) {
+      setIsSearchView(false);
+    }
+  };
 
-  return (
-    <>
-      <VideoView style={StyleSheet.absoluteFillObject} player={player} nativeControls={false} allowsFullscreen contentFit="contain" />
-      {isBuffering && !isPaused && <View style={styles.tuningOverlay}><ActivityIndicator size="large" color="#FFF" /></View>}
-    </>
-  );
-};
+  const filterCategory = (catName) => {
+    setActiveCategory(catName);
+    if (catName === 'Todos') {
+      setFilteredChannels(allChannels);
+    } else {
+      setFilteredChannels(allChannels.filter(c => c.category === catName));
+    }
+  };
 
-const PlayerArea = ({ state, isTVLayout = false }) => {
-  const { activeItem, isTuning, isPaused, nativePlayerRef, webviewRef } = state;
-
-  return (
-    <View style={[styles.playerContainer, isTVLayout && StyleSheet.absoluteFillObject, !isTVLayout && { width: '100%', aspectRatio: 16 / 9, maxHeight: '100%' }]}>
-      {!activeItem ? (
-        <View style={styles.placeholderPlayer}><Text style={styles.placeholderText}>Selecione um canal para assistir</Text></View>
-      ) : !isTuning && isDirectStream(activeItem.streamUrl) ? (
-        <ExpoNativePlayer key={activeItem.streamUrl} playerRef={nativePlayerRef} streamUrl={activeItem.streamUrl} isPaused={isPaused} />
-      ) : !isTuning && Platform.OS === 'web' ? (
-        <WebVideoPlayer key={activeItem.streamUrl} streamUrl={activeItem.streamUrl} />
-      ) : !isTuning && activeItem ? (
-        <IframePlayer key={activeItem.streamUrl} streamUrl={activeItem.streamUrl} webviewRef={webviewRef} />
-      ) : null}
-
-      {isTuning && (
-        <View style={[styles.tuningOverlay, { backgroundColor: isTVLayout ? 'transparent' : 'rgba(0,0,0,0.9)' }]}>
-          <ActivityIndicator size="large" color="#E50914" />
-          <Text style={styles.tuningText}>SINTONIZANDO</Text>
-          <Text style={styles.tuningChannel}>{activeItem?.name}</Text>
-        </View>
-      )}
-    </View>
-  );
-};
-
-// ==========================================
-// 2. LÓGICA DE DADOS (HOOK)
-// ==========================================
-
-const useMediaApp = () => {
-  const [activeTab, setActiveTab] = useState('Home');
-  const [items, setItems] = useState([]);
-  const [loading, setLoading] = useState(false);
-  const [activeItem, setActiveItem] = useState(null);
-  const [isTuning, setIsTuning] = useState(false);
-  const [isPaused, setIsPaused] = useState(false);
-
-  const nativePlayerRef = useRef(null);
-  const webviewRef = useRef(null);
-
-  useEffect(() => {
-    const fetchMedia = async () => {
-      setLoading(true);
+  const performSearch = async (text) => {
+    setSearchQuery(text);
+    if (text.length > 2) {
+      setIsSearching(true);
       try {
-        let endpoint = '/channels?category=Futebol';
-        if (activeTab === 'Canais') endpoint = '/channels';
-        if (activeTab === 'Esportes') endpoint = '/sports?status=live';
-
-        const response = await fetch(`${API_BASE_URL}${endpoint}`);
-        const json = await response.json();
-        const apiItems = Array.isArray(json) ? json : (json.data || [json]);
-
-        const parsedApiItems = apiItems.map(item => {
-          const isEvent = item.title && item.poster;
-          const streamUrl = isEvent ? item.embeds?.[0]?.embed_url : item.streamUrl || item.embed_url || item.url || `https://reidoscanais.ooo/embed/player.php?id=${item.id}`;
-          return { id: item.id, name: isEvent ? item.title : item.name, category: item.category || 'TV', image: item.poster || item.logo || item.image || null, streamUrl, type: isEvent ? 'event' : 'channel' };
-        });
-
-        if (TMDB_API_KEY) {
-          const enrichedItems = await Promise.all(
-            parsedApiItems.map(async (item) => {
-              if (item.type === 'channel') {
-                try {
-                  const res = await fetch(`https://api.themoviedb.org/3/search/company?api_key=${TMDB_API_KEY}&query=${encodeURIComponent(item.name)}`);
-                  const tmdbJson = await res.json();
-                  const result = tmdbJson.results?.find(r => r.logo_path);
-                  if (result) return { ...item, image: `${TMDB_IMAGE_BASE_URL}${result.logo_path}` };
-                } catch (e) {}
-              }
-              return item;
-            })
-          );
-          setItems(enrichedItems);
-        } else {
-          setItems(parsedApiItems);
+        const res = await fetch(`${API_BASE_URL}/search?q=${encodeURIComponent(text)}`);
+        const json = await res.json();
+        if (json.success && json.data.channels) {
+          setSearchResults(json.data.channels);
         }
       } catch (error) {
-        console.error("Erro API:", error);
+        console.error(error);
       } finally {
-        setLoading(false);
+        setIsSearching(false);
       }
-    };
-    fetchMedia();
-  }, [activeTab]);
+    } else {
+      setSearchResults([]);
+    }
+  };
 
-  const tuneChannel = useCallback((item) => {
-    if (item.id === activeItem?.id) return;
-    setIsTuning(true);
-    setActiveItem(item);
-    setTimeout(() => setIsTuning(false), 1500);
-  }, [activeItem]);
+  const handleChromecast = async () => {
+    if (!currentStream) {
+      showToast('Selecione um canal primeiro');
+      return;
+    }
 
-  return { activeTab, setActiveTab, items, loading, activeItem, isTuning, isPaused, tuneChannel, nativePlayerRef, webviewRef };
-};
+    if (Platform.OS === 'web') {
+      // Lógica do Chromecast para a versão Web
+      if (typeof window !== 'undefined' && window.cast && window.cast.framework) {
+        try {
+          const castContext = window.cast.framework.CastContext.getInstance();
+          let session = castContext.getCurrentSession();
+          if (!session) {
+            await castContext.requestSession();
+            session = castContext.getCurrentSession();
+          }
+          if (session) {
+            const mediaInfo = new window.chrome.cast.media.MediaInfo(currentStream.embedUrl, 'video/mp4');
+            mediaInfo.metadata = new window.chrome.cast.media.GenericMediaMetadata();
+            mediaInfo.metadata.title = currentStream.title;
+            if (currentStream.logoUrl) {
+              mediaInfo.metadata.images = [{ url: currentStream.logoUrl }];
+            }
+            const request = new window.chrome.cast.media.LoadRequest(mediaInfo);
+            await session.loadMedia(request);
+            showToast(`Transmitindo: ${currentStream.title}`);
+          }
+        } catch (e) {
+          console.error('Chromecast error:', e);
+          showToast('Erro ao transmitir na Web.');
+        }
+      } else {
+        showToast('SDK do Chromecast ainda não carregou ou não é suportado no seu navegador.');
+      }
+    } else {
+      // Lógica do Chromecast Nativo (Requer Dev Build)
+      try {
+        const { default: GoogleCast } = require('react-native-google-cast');
+        const sessionManager = GoogleCast.getSessionManager();
+        const session = await sessionManager.getCurrentCastSession();
+        
+        if (!session) {
+          GoogleCast.showCastPicker();
+          showToast('Conecte-se a um dispositivo e clique de novo.');
+        } else {
+          const client = await session.getRemoteMediaClient();
+          if (client) {
+            client.loadMedia({
+              mediaInfo: {
+                contentUrl: currentStream.embedUrl,
+                metadata: {
+                  title: currentStream.title,
+                  images: currentStream.logoUrl ? [{ url: currentStream.logoUrl }] : undefined
+                }
+              }
+            });
+            showToast(`Transmitindo: ${currentStream.title}`);
+          }
+        }
+      } catch (error) {
+        console.warn(error);
+        showToast('Chromecast Nativo requer uma Dev Build (npx expo run:android).');
+      }
+    }
+  };
 
-const Card = ({ item, tuneChannel, isTV = false, isActive = false }) => (
-  <TouchableOpacity style={[isTV ? styles.cardTV : styles.card, isActive && isTV && styles.cardTVActive]} onPress={() => tuneChannel(item)} activeOpacity={0.8}>
-    <Image source={{ uri: item.image || 'https://via.placeholder.com/300x169/222222/FFFFFF?text=W3L' }} style={isTV ? styles.posterTV : styles.poster} resizeMode="cover" />
-    {!isTV && (
-      <View style={styles.cardInfo}>
-        <Text style={styles.cardTitle} numberOfLines={1}>{item.name}</Text>
-        <Text style={styles.cardCategory}>{item.category}</Text>
+  // Renderizadores de Listas
+  const renderCategoryItem = ({ item, index }) => {
+    const icons = ['film', 'futbol', 'theater-masks', 'music', 'newspaper', 'child', 'gamepad', 'globe'];
+    const iconName = item.name === 'Todos' ? 'th-large' : icons[index % icons.length];
+    const isActive = activeCategory === item.name;
+
+    return (
+      <TouchableOpacity 
+        style={[styles.catBtn, isActive && styles.catBtnActive]}
+        onPress={() => filterCategory(item.name)}
+      >
+        <FontAwesome5 name={iconName} size={20} color={isActive ? theme.text : theme.muted} />
+        <Text style={[styles.catText, isActive && styles.catTextActive]} numberOfLines={1}>
+          {item.name}
+        </Text>
+      </TouchableOpacity>
+    );
+  };
+
+  const renderChannelItem = ({ item }) => (
+    <TouchableOpacity style={styles.channelBtn} onPress={() => playStream(item)}>
+      <View style={styles.channelLogoContainer}>
+        <Image source={{ uri: item.logo_url || item.logo }} style={styles.channelLogo} resizeMode="contain" />
       </View>
-    )}
-  </TouchableOpacity>
-);
-
-// ==========================================
-// SPLASH SCREEN DE ABERTURA
-// ==========================================
-const SplashScreen = ({ onAnimationEnd, isMobileDevice }) => {
-
-  useEffect(() => {
-    // Define um tempo para a splash screen ser exibida
-    const timer = setTimeout(() => {
-      if (onAnimationEnd) {
-        onAnimationEnd();
-      }
-    }, 3500); // 3.5 segundos
-
-    // Limpa o timer se o componente for desmontado
-    return () => clearTimeout(timer);
-  }, [onAnimationEnd]);
-
-  // Escolhe o GIF com base no tipo de dispositivo
-  const splashGif = isMobileDevice
-    ? require('./assets/LABS.gif')
-    : require('./assets/tv.gif');
-
-  return (
-    <View style={styles.splashContainer}>
-      <Image
-        source={splashGif}
-        style={styles.splashGif}
-      />
-    </View>
+      <View style={styles.channelInfo}>
+        <Text style={styles.channelTitle} numberOfLines={1}>{item.name}</Text>
+        <Text style={styles.channelCategory} numberOfLines={1}>{item.category || 'TV'}</Text>
+      </View>
+      <FontAwesome5 name="play" size={16} color={theme.accent} style={{ opacity: 0.5 }} />
+    </TouchableOpacity>
   );
-};
 
-// ==========================================
-// 3. AS 4 INTERFACES PRINCIPAIS
-// ==========================================
+  // Componentes Principais da Tela
+  const MainPlayer = () => (
+    <View style={[styles.playerContainer, isDesktop ? { flex: 1 } : { height: height * 0.4 }]}>
+      {/* Overlay de Fundo */}
+      <View style={styles.playerHeader}>
+        <View style={styles.playerHeaderInfo}>
+          {currentStream?.logoUrl && (
+            <Image source={{ uri: currentStream.logoUrl }} style={styles.playerLogo} resizeMode="contain" />
+          )}
+          <View>
+            <View style={styles.badge}><Text style={styles.badgeText}>AO VIVO</Text></View>
+            <Text style={styles.playerTitle} numberOfLines={1}>{currentStream?.title || 'W3Labs-TV+'}</Text>
+            <Text style={styles.playerSubtitle}>{currentStream?.category || 'Selecione um canal'}</Text>
+          </View>
+        </View>
 
-// INTERFACE 1: MOBILE (Celular)
-const MobileLayout = ({ state, insets }) => (
-  <View style={styles.contentArea}>
-    <PlayerArea state={state} />
-    <View style={styles.listContainer}>
-      <Text style={styles.sectionTitle}>{state.activeTab}</Text>
-      {state.loading ? <ActivityIndicator color="#E50914" /> : (
-        <FlatList data={state.items} keyExtractor={i => i.id.toString()} renderItem={({ item }) => <Card item={item} tuneChannel={state.tuneChannel} />} numColumns={2} key="mobile-grid" />
+        <View style={styles.playerActions}>
+          <TouchableOpacity 
+            style={styles.iconBtn} 
+            onPress={() => setIsSidebarVisible(!isSidebarVisible)}
+          >
+            <FontAwesome5 name={isSidebarVisible ? "expand" : "compress"} size={16} color={theme.text} />
+          </TouchableOpacity>
+            <TouchableOpacity style={styles.iconBtn} onPress={handleChromecast}>
+            <FontAwesome5 name="chromecast" size={16} color={theme.text} />
+          </TouchableOpacity>
+        </View>
+      </View>
+
+      {currentStream ? (
+        Platform.OS === 'web' ? (
+          <iframe
+            src={currentStream.embedUrl}
+            style={{ width: '100%', height: '100%', border: 'none' }}
+            allowFullScreen={true}
+            allow="autoplay; fullscreen"
+          />
+        ) : (
+          <WebView 
+            source={{ uri: currentStream.embedUrl }}
+            style={styles.webview}
+            allowsFullscreenVideo={true}
+            javaScriptEnabled={true}
+            domStorageEnabled={true}
+            mediaPlaybackRequiresUserAction={false}
+          />
+        )
+      ) : (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={theme.accent} />
+          <Text style={styles.loadingText}>Sintonizando...</Text>
+        </View>
       )}
     </View>
-    <View style={[styles.mobileNav, { paddingBottom: Math.max(insets.bottom, 10) }]}>
-      {NAV_ITEMS.map((tab) => {
-        const Icon = tab.icon;
-        const isActive = state.activeTab === tab.name;
-        return (
-          <TouchableOpacity key={tab.name} style={styles.mobileNavItem} onPress={() => state.setActiveTab(tab.name)}>
-            <Icon size={24} color={isActive ? '#E50914' : '#AAA'} />
-            <Text style={[styles.mobileNavText, isActive && { color: '#E50914' }]}>{tab.name}</Text>
-          </TouchableOpacity>
-        );
-      })}
-    </View>
-  </View>
-);
+  );
 
-// INTERFACE 2: TABLET
-const TabletLayout = ({ state, insets }) => (
-  <View style={[styles.contentArea, { flexDirection: 'row' }]}>
-    <View style={[styles.tabletNav, { paddingTop: Math.max(insets.top, 20) }]}>
-      <Text style={styles.logoSmall}>W3Labs</Text>
-      {NAV_ITEMS.map((tab) => {
-        const Icon = tab.icon;
-        const isActive = state.activeTab === tab.name;
-        return (
-          <TouchableOpacity key={tab.name} style={[styles.tabletNavItem, isActive && styles.tabletNavItemActive]} onPress={() => state.setActiveTab(tab.name)}>
-            <Icon size={28} color={isActive ? '#FFF' : '#888'} />
-            <Text style={[styles.tabletNavText, isActive && { color: '#FFF' }]}>{tab.name}</Text>
-          </TouchableOpacity>
-        );
-      })}
-    </View>
-    <View style={{ flex: 1, flexDirection: 'column' }}>
-      <PlayerArea state={state} />
-      <View style={styles.listContainer}>
-        <Text style={styles.sectionTitle}>{state.activeTab}</Text>
-        {state.loading ? <ActivityIndicator color="#E50914" /> : (
-          <FlatList data={state.items} keyExtractor={i => i.id.toString()} renderItem={({ item }) => <Card item={item} tuneChannel={state.tuneChannel} />} numColumns={3} key="tablet-grid" />
-        )}
-      </View>
-    </View>
-  </View>
-);
+  const Sidebar = () => {
+    if (!isSidebarVisible) return null;
 
-// INTERFACE 3: DESKTOP / WEB (Com opção de ocultar o menu inferior)
-const DesktopLayout = ({ state }) => {
-  const [isMenuVisible, setIsMenuVisible] = useState(true); // Controle de visibilidade do menu inferior
-
-  return (
-    <View style={[styles.contentArea, { flexDirection: 'row' }]}>
-      <View style={styles.desktopNav}>
-        <Text style={styles.logoLarge}>W3Labs-TV</Text>
-        <Text style={styles.desktopMenuLabel}>MENU PRINCIPAL</Text>
-        {NAV_ITEMS.map((tab) => {
-          const Icon = tab.icon;
-          const isActive = state.activeTab === tab.name;
-          return (
-            <TouchableOpacity key={tab.name} style={[styles.desktopNavItem, isActive && styles.desktopNavItemActive]} onPress={() => state.setActiveTab(tab.name)}>
-              <Icon size={20} color={isActive ? '#FFF' : '#AAA'} />
-              <Text style={[styles.desktopNavText, isActive && { color: '#FFF' }]}>{tab.name}</Text>
-            </TouchableOpacity>
-          );
-        })}
-      </View>
-
-      <View style={{ flex: 1, flexDirection: 'column' }}>
-        
-        {/* Player Area com Botão Circular Flutuante */}
-        <View style={{ flex: 1, backgroundColor: '#000', justifyContent: 'center', position: 'relative' }}>
-          <PlayerArea state={state} />
-          {state.activeItem && (
-            <View style={{ padding: 20, position: 'absolute', bottom: 0, left: 0, right: 0, backgroundColor: 'rgba(0,0,0,0.6)' }}>
-              <Text style={{ color: '#FFF', fontSize: 24, fontWeight: 'bold' }}>{state.activeItem.name}</Text>
-              <Text style={{ color: '#E50914', fontSize: 16 }}>{state.activeItem.category}</Text>
-            </View>
-          )}
-
-          {/* Botão de ocultar/mostrar redondo flutuante */}
+    return (
+      <View style={[styles.sidebarContainer, isDesktop ? { width: 384 } : { flex: 1 }]}>
+        {/* Header da Sidebar */}
+        <View style={styles.sidebarHeader}>
+          <View style={styles.logoRow}>
+            <FontAwesome5 name="tv" size={24} color={theme.accent} />
+            <Text style={styles.sidebarTitle}>W3Labs<Text style={{ color: theme.accent }}>+</Text></Text>
+          </View>
           <TouchableOpacity 
-            style={styles.toggleMenuButton} 
-            onPress={() => setIsMenuVisible(!isMenuVisible)}
-            activeOpacity={0.8}
+            style={styles.searchBtn} 
+            onPress={() => setIsSearchView(!isSearchView)}
           >
-            {isMenuVisible ? <ChevronDown color="#FFF" size={24} /> : <ChevronUp color="#FFF" size={24} />}
+            <FontAwesome5 name={isSearchView ? "times" : "search"} size={18} color={theme.text} />
           </TouchableOpacity>
         </View>
 
-        {/* Menu de Canais Area (Visível condicionalmente) */}
-        {isMenuVisible && (
-          <View style={{ height: 260, backgroundColor: '#111', borderTopWidth: 1, borderColor: '#222' }}>
-            <View style={styles.listContainer}>
-              <Text style={styles.sectionTitle}>{state.activeTab}</Text>
-              {state.loading ? <ActivityIndicator color="#E50914" /> : (
-                <FlatList 
-                  data={state.items} 
-                  keyExtractor={i => i.id.toString()} 
-                  renderItem={({ item }) => (
-                    <View style={{ width: 220, marginRight: 15 }}>
-                      <Card item={item} tuneChannel={state.tuneChannel} />
-                    </View>
-                  )} 
-                  horizontal={true} 
-                  showsHorizontalScrollIndicator={true} 
-                  key="desktop-bottom-list" 
-                />
-              )}
+        {isLoading ? (
+          <View style={styles.loadingContainer}>
+             <ActivityIndicator size="large" color={theme.accent} />
+          </View>
+        ) : isSearchView ? (
+          /* VIEW DE BUSCA */
+          <View style={styles.searchView}>
+            <View style={styles.searchInputContainer}>
+              <FontAwesome5 name="search" size={16} color={theme.muted} style={styles.searchIcon} />
+              <TextInput 
+                style={styles.searchInput}
+                placeholder="Nome do canal..."
+                placeholderTextColor={theme.muted}
+                value={searchQuery}
+                onChangeText={performSearch}
+                autoFocus
+              />
+            </View>
+            {isSearching ? (
+              <ActivityIndicator size="large" color={theme.accent} style={{ marginTop: 20 }} />
+            ) : searchResults.length > 0 ? (
+              <FlatList 
+                data={searchResults}
+                keyExtractor={(item, index) => `${item.name}-${index}`}
+                renderItem={renderChannelItem}
+                contentContainerStyle={{ padding: 16 }}
+              />
+            ) : (
+              <View style={styles.emptyState}>
+                <FontAwesome5 name="clapperboard" size={40} color={theme.white10} style={{ marginBottom: 16 }} />
+                <Text style={styles.emptyStateText}>Pesquise por nome do canal, programas esportivos ou filmes.</Text>
+              </View>
+            )}
+          </View>
+        ) : (
+          /* VIEW PADRÃO: MASTER/DETAIL */
+          <View style={styles.splitView}>
+            {/* Coluna Categorias */}
+            <View style={styles.categoriesCol}>
+               <Text style={styles.colTitle}>CATEGORIAS</Text>
+               <FlatList 
+                 data={[{ name: 'Todos' }, ...allCategories]}
+                 keyExtractor={item => item.name}
+                 renderItem={renderCategoryItem}
+                 showsVerticalScrollIndicator={false}
+               />
+            </View>
+            {/* Coluna Canais */}
+            <View style={styles.channelsCol}>
+               <View style={styles.channelsHeader}>
+                 <Text style={styles.colTitleCanais} numberOfLines={1}>{activeCategory === 'Todos' ? 'Todos os Canais' : activeCategory}</Text>
+                 <View style={styles.countBadge}>
+                   <Text style={styles.countText}>{filteredChannels.length}</Text>
+                 </View>
+               </View>
+               <FlatList 
+                 data={filteredChannels}
+                 keyExtractor={(item, index) => `${item.name}-${index}`}
+                 renderItem={renderChannelItem}
+                 showsVerticalScrollIndicator={false}
+                 contentContainerStyle={{ paddingBottom: 20 }}
+               />
             </View>
           </View>
         )}
-
       </View>
-    </View>
-  );
-};
+    );
+  };
 
-// INTERFACE 4: TV (Android TV / Apple TV)
-const TVLayout = ({ state }) => (
-  <View style={styles.contentArea}>
-    <PlayerArea state={state} isTVLayout={true} />
-    <View style={styles.tvOverlayContainer}>
-      <LinearGradient colors={['transparent', 'rgba(0,0,0,0.95)']} style={StyleSheet.absoluteFillObject} />
-      <View style={styles.tvBottomArea}>
-        <View style={styles.tvNavbar}>
-          <Text style={styles.logoTV}>W3Labs-TV</Text>
-          {NAV_ITEMS.map((tab) => {
-            const Icon = tab.icon;
-            const isActive = state.activeTab === tab.name;
-            return (
-              <TouchableOpacity key={tab.name} style={[styles.tvNavItem, isActive && styles.tvNavItemActive]} onPress={() => state.setActiveTab(tab.name)} hasTVPreferredFocus={isActive}>
-                <Icon size={24} color={isActive ? '#FFF' : '#AAA'} />
-                <Text style={[styles.tvNavText, isActive && { color: '#FFF' }]}>{tab.name}</Text>
-              </TouchableOpacity>
-            );
-          })}
-        </View>
-        <Text style={styles.tvSectionTitle}>{state.activeTab}</Text>
-        {state.loading ? <ActivityIndicator color="#E50914" style={{ margin: 20 }} /> : (
-          <FlatList
-            data={state.items}
-            keyExtractor={i => i.id.toString()}
-            renderItem={({ item }) => <Card item={item} tuneChannel={state.tuneChannel} isTV={true} isActive={state.activeItem?.id === item.id} />}
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={{ paddingHorizontal: 40, paddingBottom: 20 }}
-          />
-        )}
-      </View>
-    </View>
-  </View>
-);
-
-// ==========================================
-// 4. CONTROLE PRINCIPAL E ROTEAMENTO
-// ==========================================
-
-const AppContent = () => {
-  // Controla a exibição da animação de splash screen
-  const [isAnimationDone, setIsAnimationDone] = useState(false);
-  const { width } = useWindowDimensions();
-  const insets = useSafeAreaInsets();
-  const state = useMediaApp();
-  
-  const isTV = Platform.isTV;
-  const isMobile = width < 768 && !isTV;
-  const isTablet = width >= 768 && width < 1024 && !isTV;
-  const isDesktop = width >= 1024 && !isTV;
-  const isMobileDevice = isMobile || isTablet;
-
-  // Mostra a splash screen até a animação terminar
-  if (!isAnimationDone) {
-    return <SplashScreen onAnimationEnd={() => setIsAnimationDone(true)} isMobileDevice={isMobileDevice} />;
-  }
-
-  return (
-    <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
-      <StatusBar barStyle="light-content" backgroundColor="#000" hidden={isTV} />
-      
-      {isTV && <TVLayout state={state} />}
-      {isMobile && <MobileLayout state={state} insets={insets} />}
-      {isTablet && <TabletLayout state={state} insets={insets} />}
-      {isDesktop && <DesktopLayout state={state} />}
-    </SafeAreaView>
-  );
-}
-
-export default function App() {
+  // Estrutura Principal de Retorno (Condicional entre Desktop vs Mobile)
   return (
     <SafeAreaProvider>
-      <AppContent />
+      <SafeAreaView style={styles.safeArea}>
+        <StatusBar barStyle="light-content" backgroundColor={theme.bg} />
+        
+        <View style={[styles.mainLayout, isDesktop ? { flexDirection: 'row' } : { flexDirection: 'column' }]}>
+          {/* Ordem de Componentes: Desktop (Sidebar na esquerda), Mobile (Player no topo) */}
+          {isDesktop ? (
+            <>
+              <Sidebar />
+              <MainPlayer />
+            </>
+          ) : (
+            <>
+              <MainPlayer />
+              <Sidebar />
+            </>
+          )}
+        </View>
+
+        {/* Toast Notification */}
+        <Animated.View style={[styles.toast, { transform: [{ translateY: toastAnim }] }]}>
+          <FontAwesome5 name="exclamation-circle" size={20} color={theme.accent} />
+          <Text style={styles.toastText}>{toastMsg}</Text>
+        </Animated.View>
+      </SafeAreaView>
     </SafeAreaProvider>
   );
 }
 
-// ==========================================
-// 5. ESTILOS GERAIS
-// ==========================================
-
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#000' },
-  contentArea: { flex: 1, backgroundColor: '#000' },
-  splashContainer: {
+  safeArea: {
+    flex: 1,
+    backgroundColor: theme.bg,
+  },
+  mainLayout: {
+    flex: 1,
+    backgroundColor: theme.bg,
+  },
+  loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
     backgroundColor: '#000',
   },
-  splashGif: {
-    width: '80%',
-    height: '80%',
-    resizeMode: 'contain',
+  loadingText: {
+    color: theme.muted,
+    marginTop: 10,
+    fontSize: 16,
   },
-
-  // Player
-  playerContainer: { backgroundColor: '#0A0A0A', zIndex: 10 },
-  placeholderPlayer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  placeholderText: { color: '#666', fontSize: 16 },
-  webviewContainer: { flex: 1 },
-  webview: { flex: 1, backgroundColor: '#000' },
-  tuningOverlay: { ...StyleSheet.absoluteFillObject, justifyContent: 'center', alignItems: 'center', zIndex: 30 },
-  tuningText: { color: '#FFF', fontSize: 12, letterSpacing: 2, marginTop: 15 },
-  tuningChannel: { color: '#E50914', fontSize: 22, fontWeight: 'bold', textAlign: 'center', paddingHorizontal: 10 },
-  errorText: { color: '#FF8A8A', fontSize: 14, textAlign: 'center' },
-
-  // Listas Gerais
-  listContainer: { flex: 1, padding: 15 },
-  sectionTitle: { color: '#FFF', fontSize: 22, fontWeight: 'bold', marginBottom: 15 },
-
-  // Cards (Mobile/Tablet/Desktop)
-  card: { flex: 1, backgroundColor: '#1A1A1A', margin: 5, borderRadius: 8, overflow: 'hidden', borderWidth: 1, borderColor: '#222' },
-  poster: { width: '100%', aspectRatio: 16 / 9, backgroundColor: '#222' },
-  cardInfo: { padding: 10 },
-  cardTitle: { color: '#FFF', fontSize: 14, fontWeight: 'bold' },
-  cardCategory: { color: '#E50914', fontSize: 12, marginTop: 2 },
-
-  // MOBILE STYLES
-  mobileNav: { flexDirection: 'row', backgroundColor: '#111', borderTopWidth: 1, borderColor: '#222', paddingTop: 10, justifyContent: 'space-around' },
-  mobileNavItem: { alignItems: 'center', flex: 1 },
-  mobileNavText: { color: '#AAA', fontSize: 12, marginTop: 4, fontWeight: '600' },
-
-  // TABLET STYLES
-  tabletNav: { width: 80, backgroundColor: '#111', borderRightWidth: 1, borderColor: '#222', alignItems: 'center' },
-  logoSmall: { color: '#E50914', fontSize: 20, fontWeight: 'bold', marginBottom: 30 },
-  tabletNavItem: { alignItems: 'center', marginBottom: 30, padding: 10, borderRadius: 10 },
-  tabletNavItemActive: { backgroundColor: 'rgba(229,9,20,0.2)' },
-  tabletNavText: { color: '#888', fontSize: 10, marginTop: 5, fontWeight: 'bold' },
-
-  // DESKTOP STYLES
-  desktopNav: { width: 250, backgroundColor: '#111', borderRightWidth: 1, borderColor: '#222', padding: 20 },
-  logoLarge: { color: '#E50914', fontSize: 32, fontWeight: 'bold', marginBottom: 40 },
-  desktopMenuLabel: { color: '#555', fontSize: 12, fontWeight: 'bold', marginBottom: 15, letterSpacing: 1 },
-  desktopNavItem: { flexDirection: 'row', alignItems: 'center', paddingVertical: 12, paddingHorizontal: 15, borderRadius: 8, marginBottom: 10 },
-  desktopNavItemActive: { backgroundColor: '#E50914' },
-  desktopNavText: { color: '#AAA', fontSize: 16, fontWeight: 'bold', marginLeft: 15 },
   
-  // Botão circular do Desktop
-  toggleMenuButton: { 
-    position: 'absolute', 
-    bottom: 20, 
-    alignSelf: 'center', 
-    backgroundColor: 'rgba(0,0,0,0.7)', 
-    width: 44, 
-    height: 44, 
-    borderRadius: 22, 
-    justifyContent: 'center', 
-    alignItems: 'center', 
-    borderWidth: 1, 
-    borderColor: 'rgba(255,255,255,0.2)', 
-    zIndex: 50 
+  /* Player Area */
+  playerContainer: {
+    backgroundColor: '#000',
+    position: 'relative',
+    elevation: 10,
+    boxShadow: '0px 0px 10px rgba(0, 0, 0, 0.5)',
+  },
+  playerHeader: {
+    position: 'absolute',
+    top: 0, left: 0, right: 0,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    padding: 16,
+    zIndex: 10,
+    backgroundColor: 'rgba(0,0,0,0.6)', 
+  },
+  playerHeaderInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  playerLogo: {
+    width: 48, height: 48,
+    borderRadius: 8,
+    backgroundColor: '#0a0a0a',
+    borderWidth: 1,
+    borderColor: theme.white10,
+    marginRight: 12,
+  },
+  badge: {
+    backgroundColor: theme.primary,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+    alignSelf: 'flex-start',
+    marginBottom: 4,
+  },
+  badgeText: {
+    color: '#fff',
+    fontSize: 10,
+    fontWeight: 'bold',
+  },
+  playerTitle: {
+    color: '#fff',
+    fontSize: 18,
+    fontWeight: 'bold',
+  },
+  playerSubtitle: {
+    color: theme.muted,
+    fontSize: 12,
+  },
+  playerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  iconBtn: {
+    width: 40, height: 40,
+    borderRadius: 20,
+    backgroundColor: theme.black40,
+    borderWidth: 1,
+    borderColor: theme.white10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  webview: {
+    flex: 1,
+    backgroundColor: '#000',
   },
 
-  // TV STYLES
-  tvOverlayContainer: { ...StyleSheet.absoluteFillObject, justifyContent: 'flex-end', zIndex: 20 },
-  tvBottomArea: { paddingBottom: 20 },
-  tvNavbar: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 40, marginBottom: 15 },
-  logoTV: { color: '#E50914', fontSize: 36, fontWeight: 'bold', marginRight: 30 },
-  tvNavItem: { flexDirection: 'row', alignItems: 'center', marginRight: 20, paddingVertical: 8, paddingHorizontal: 15, borderRadius: 20 },
-  tvNavItemActive: { backgroundColor: 'rgba(255,255,255,0.2)' },
-  tvNavText: { color: '#AAA', fontSize: 18, fontWeight: 'bold', marginLeft: 10 },
-  tvSectionTitle: { color: '#FFF', fontSize: 28, fontWeight: 'bold', marginLeft: 40, marginBottom: 15, textShadowColor: '#000', textShadowRadius: 10 },
-  cardTV: { width: 260, height: 146, marginRight: 15, borderRadius: 12, borderWidth: 3, borderColor: 'transparent', overflow: 'hidden' },
-  cardTVActive: { borderColor: '#E50914', transform: [{ scale: 1.05 }] },
-  posterTV: { width: '100%', height: '100%', backgroundColor: '#222' },
+  /* Sidebar Area */
+  sidebarContainer: {
+    backgroundColor: theme.surface,
+    borderRightWidth: 1,
+    borderTopWidth: 1,
+    borderColor: theme.white5,
+  },
+  sidebarHeader: {
+    height: 60,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: theme.white5,
+    backgroundColor: theme.bg,
+  },
+  logoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  sidebarTitle: {
+    color: '#fff',
+    fontSize: 20,
+    fontWeight: 'bold',
+  },
+  searchBtn: {
+    width: 40, height: 40,
+    borderRadius: 20,
+    backgroundColor: theme.white5,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  /* Master Detail List */
+  splitView: {
+    flex: 1,
+    flexDirection: 'row',
+  },
+  categoriesCol: {
+    width: 100,
+    backgroundColor: 'rgba(0,0,0,0.1)',
+    borderRightWidth: 1,
+    borderRightColor: theme.white5,
+    padding: 8,
+  },
+  channelsCol: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.3)',
+    padding: 8,
+  },
+  colTitle: {
+    fontSize: 10,
+    fontWeight: 'bold',
+    color: theme.muted,
+    marginBottom: 10,
+    textAlign: 'center',
+  },
+  channelsHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 10,
+    paddingHorizontal: 4,
+  },
+  colTitleCanais: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: '#fff',
+    textTransform: 'uppercase',
+    flex: 1,
+  },
+  countBadge: {
+    backgroundColor: 'rgba(59, 130, 246, 0.2)',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 12,
+  },
+  countText: {
+    color: theme.accent,
+    fontSize: 10,
+    fontWeight: 'bold',
+  },
+
+  /* Buttons and Items */
+  catBtn: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    marginBottom: 8,
+    borderRadius: 8,
+  },
+  catBtnActive: {
+    backgroundColor: 'rgba(59, 130, 246, 0.15)',
+    borderLeftWidth: 3,
+    borderLeftColor: theme.accent,
+  },
+  catText: {
+    color: theme.muted,
+    fontSize: 10,
+    marginTop: 6,
+    textAlign: 'center',
+  },
+  catTextActive: {
+    color: '#fff',
+    fontWeight: 'bold',
+  },
+  channelBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 12,
+    borderRadius: 12,
+    marginBottom: 8,
+  },
+  channelLogoContainer: {
+    width: 48, height: 48,
+    borderRadius: 12,
+    backgroundColor: '#0a0a0a',
+    borderWidth: 1,
+    borderColor: theme.white5,
+    padding: 4,
+  },
+  channelLogo: {
+    flex: 1,
+    width: '100%',
+    height: '100%',
+  },
+  channelInfo: {
+    flex: 1,
+    marginLeft: 12,
+  },
+  channelTitle: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  channelCategory: {
+    color: theme.muted,
+    fontSize: 12,
+    textTransform: 'uppercase',
+    marginTop: 2,
+  },
+
+  /* Search View */
+  searchView: {
+    flex: 1,
+    backgroundColor: theme.surface,
+  },
+  searchInputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: theme.white5,
+  },
+  searchIcon: {
+    position: 'absolute',
+    left: 28,
+    zIndex: 1,
+  },
+  searchInput: {
+    flex: 1,
+    backgroundColor: '#0a0a0a',
+    borderWidth: 1,
+    borderColor: theme.white10,
+    borderRadius: 12,
+    paddingVertical: 12,
+    paddingLeft: 40,
+    paddingRight: 16,
+    color: '#fff',
+    fontSize: 16,
+  },
+  emptyState: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 32,
+  },
+  emptyStateText: {
+    color: theme.muted,
+    textAlign: 'center',
+    fontSize: 14,
+  },
+
+  /* Toast Notification */
+  toast: {
+    position: 'absolute',
+    bottom: 40,
+    alignSelf: 'center',
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: theme.surface,
+    paddingHorizontal: 24,
+    paddingVertical: 16,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: theme.white10,
+    boxShadow: '0px 0px 8px rgba(0, 0, 0, 0.3)',
+    elevation: 5,
+    gap: 12,
+  },
+  toastText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '500',
+  }
 });
