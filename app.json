@@ -21,7 +21,7 @@
         "backgroundColor": "#ffffff"
       },
       "edgeToEdgeEnabled": true,
-      "package": "com.w3labs.br.tv",
+      "package": "com.w3labs.tv",
       "orientation": "landscape"
     },
     "web": {
@@ -33,19 +33,13 @@
       }
     },
     "plugins": [
-      "expo-audio",
       [
         "react-native-google-cast",
         {
           "receiverAppId": "CC1AD845",
           "expandedController": true
         }
-      ],
-      "expo-video"
-    ],
-    "react-native-google-mobile-ads": {
-      "android_app_id": "ca-app-pub-5064368958997852~5867816023",
-      "ios_app_id": "ca-app-pub-5064368958997852~5867816023"
-    }
+      ]
+    ]
   }
 }
