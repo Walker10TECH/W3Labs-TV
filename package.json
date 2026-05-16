@@ -10,20 +10,7 @@
   },
   "dependencies": {
     "@expo/vector-icons": "^15.1.1",
-    "@react-navigation/bottom-tabs": "^7.15.13",
-    "@react-navigation/stack": "^7.8.13",
     "expo": "~54.0.33",
-    "expo-audio": "~1.1.1",
-    "expo-av": "^16.0.8",
-    "expo-blur": "~15.0.8",
-    "expo-brightness": "~14.0.8",
-    "expo-linear-gradient": "~15.0.8",
-    "expo-notifications": "^55.0.22",
-    "expo-screen-orientation": "^55.0.14",
-    "expo-status-bar": "~3.0.9",
-    "expo-video": "~3.0.16",
-    "lucide-react": "^0.575.0",
-    "lucide-react-native": "^0.575.0",
     "react": "19.1.0",
     "react-dom": "19.1.0",
     "react-native": "0.81.5",
@@ -34,7 +21,7 @@
   },
   "private": true,
   "devDependencies": {
-    "@types/react": "^19.2.14",
+    "@types/react": "~19.1.10",
     "typescript": "~5.9.2"
   }
 }

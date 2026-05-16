@@ -40,8 +40,6 @@ export default function App() {
   // Estados Globais
   const [allChannels, setAllChannels] = useState([]);
   const [filteredChannels, setFilteredChannels] = useState([]);
-  const [allCategories, setAllCategories] = useState([]);
-  const [activeCategory, setActiveCategory] = useState('Todos');
   
   const [currentStream, setCurrentStream] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -91,17 +89,11 @@ export default function App() {
   const loadInitialData = async () => {
     setIsLoading(true);
     try {
-      const [channelsRes, catsRes] = await Promise.all([
-        fetch(`${API_BASE_URL}/channels`).then(res => res.json()),
-        fetch(`${API_BASE_URL}/channels/categories`).then(res => res.json())
-      ]);
-
+      const channelsRes = await fetch(`${API_BASE_URL}/channels`).then(res => res.json());
       const channelsData = Array.isArray(channelsRes) ? channelsRes : (channelsRes.data || []);
-      const catsData = catsRes.success ? catsRes.data : [];
 
       setAllChannels(channelsData);
       setFilteredChannels(channelsData);
-      setAllCategories(catsData);
 
       if (channelsData.length > 0) {
         playStream(channelsData[0]);
@@ -130,15 +122,6 @@ export default function App() {
     // Auto-oculta busca no mobile ao selecionar
     if (!isDesktop && isSearchView) {
       setIsSearchView(false);
-    }
-  };
-
-  const filterCategory = (catName) => {
-    setActiveCategory(catName);
-    if (catName === 'Todos') {
-      setFilteredChannels(allChannels);
-    } else {
-      setFilteredChannels(allChannels.filter(c => c.category === catName));
     }
   };
 
@@ -199,7 +182,8 @@ export default function App() {
     } else {
       // Lógica do Chromecast Nativo (Requer Dev Build)
       try {
-        const { default: GoogleCast } = require('react-native-google-cast');
+        const GoogleCastModule = require('react-native-google-cast');
+        const GoogleCast = GoogleCastModule.default || GoogleCastModule;
         const sessionManager = GoogleCast.getSessionManager();
         const session = await sessionManager.getCurrentCastSession();
         
@@ -229,28 +213,16 @@ export default function App() {
   };
 
   // Renderizadores de Listas
-  const renderCategoryItem = ({ item, index }) => {
-    const icons = ['film', 'futbol', 'theater-masks', 'music', 'newspaper', 'child', 'gamepad', 'globe'];
-    const iconName = item.name === 'Todos' ? 'th-large' : icons[index % icons.length];
-    const isActive = activeCategory === item.name;
-
-    return (
-      <TouchableOpacity 
-        style={[styles.catBtn, isActive && styles.catBtnActive]}
-        onPress={() => filterCategory(item.name)}
-      >
-        <FontAwesome5 name={iconName} size={20} color={isActive ? theme.text : theme.muted} />
-        <Text style={[styles.catText, isActive && styles.catTextActive]} numberOfLines={1}>
-          {item.name}
-        </Text>
-      </TouchableOpacity>
-    );
-  };
-
   const renderChannelItem = ({ item }) => (
     <TouchableOpacity style={styles.channelBtn} onPress={() => playStream(item)}>
       <View style={styles.channelLogoContainer}>
-        <Image source={{ uri: item.logo_url || item.logo }} style={styles.channelLogo} resizeMode="contain" />
+        {(item.logo_url || item.logo) ? (
+          <Image source={{ uri: item.logo_url || item.logo }} style={styles.channelLogo} resizeMode="contain" />
+        ) : (
+          <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+            <FontAwesome5 name="tv" size={20} color={theme.white10} />
+          </View>
+        )}
       </View>
       <View style={styles.channelInfo}>
         <Text style={styles.channelTitle} numberOfLines={1}>{item.name}</Text>
@@ -370,34 +342,21 @@ export default function App() {
             )}
           </View>
         ) : (
-          /* VIEW PADRÃO: MASTER/DETAIL */
-          <View style={styles.splitView}>
-            {/* Coluna Categorias */}
-            <View style={styles.categoriesCol}>
-               <Text style={styles.colTitle}>CATEGORIAS</Text>
-               <FlatList 
-                 data={[{ name: 'Todos' }, ...allCategories]}
-                 keyExtractor={item => item.name}
-                 renderItem={renderCategoryItem}
-                 showsVerticalScrollIndicator={false}
-               />
-            </View>
-            {/* Coluna Canais */}
-            <View style={styles.channelsCol}>
-               <View style={styles.channelsHeader}>
-                 <Text style={styles.colTitleCanais} numberOfLines={1}>{activeCategory === 'Todos' ? 'Todos os Canais' : activeCategory}</Text>
-                 <View style={styles.countBadge}>
-                   <Text style={styles.countText}>{filteredChannels.length}</Text>
-                 </View>
+          /* VIEW PADRÃO: APENAS CANAIS */
+          <View style={styles.channelsCol}>
+             <View style={styles.channelsHeader}>
+               <Text style={styles.colTitleCanais} numberOfLines={1}>Todos os Canais</Text>
+               <View style={styles.countBadge}>
+                 <Text style={styles.countText}>{filteredChannels.length}</Text>
                </View>
-               <FlatList 
-                 data={filteredChannels}
-                 keyExtractor={(item, index) => `${item.name}-${index}`}
-                 renderItem={renderChannelItem}
-                 showsVerticalScrollIndicator={false}
-                 contentContainerStyle={{ paddingBottom: 20 }}
-               />
-            </View>
+             </View>
+             <FlatList 
+               data={filteredChannels}
+               keyExtractor={(item, index) => `${item.name}-${index}`}
+               renderItem={renderChannelItem}
+               showsVerticalScrollIndicator={false}
+               contentContainerStyle={{ paddingBottom: 20 }}
+             />
           </View>
         )}
       </View>
@@ -461,7 +420,10 @@ const styles = StyleSheet.create({
     backgroundColor: '#000',
     position: 'relative',
     elevation: 10,
-    boxShadow: '0px 0px 10px rgba(0, 0, 0, 0.5)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.5,
+    shadowRadius: 10,
   },
   playerHeader: {
     position: 'absolute',
@@ -561,29 +523,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
 
-  /* Master Detail List */
-  splitView: {
-    flex: 1,
-    flexDirection: 'row',
-  },
-  categoriesCol: {
-    width: 100,
-    backgroundColor: 'rgba(0,0,0,0.1)',
-    borderRightWidth: 1,
-    borderRightColor: theme.white5,
-    padding: 8,
-  },
   channelsCol: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.3)',
-    padding: 8,
-  },
-  colTitle: {
-    fontSize: 10,
-    fontWeight: 'bold',
-    color: theme.muted,
-    marginBottom: 10,
-    textAlign: 'center',
+    padding: 12,
   },
   channelsHeader: {
     flexDirection: 'row',
@@ -611,29 +553,6 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
 
-  /* Buttons and Items */
-  catBtn: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 12,
-    marginBottom: 8,
-    borderRadius: 8,
-  },
-  catBtnActive: {
-    backgroundColor: 'rgba(59, 130, 246, 0.15)',
-    borderLeftWidth: 3,
-    borderLeftColor: theme.accent,
-  },
-  catText: {
-    color: theme.muted,
-    fontSize: 10,
-    marginTop: 6,
-    textAlign: 'center',
-  },
-  catTextActive: {
-    color: '#fff',
-    fontWeight: 'bold',
-  },
   channelBtn: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -724,8 +643,11 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     borderWidth: 1,
     borderColor: theme.white10,
-    boxShadow: '0px 0px 8px rgba(0, 0, 0, 0.3)',
     elevation: 5,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
     gap: 12,
   },
   toastText: {
