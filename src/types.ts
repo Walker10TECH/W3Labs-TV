@@ -6,6 +6,8 @@ export interface Channel {
   embed_url?: string;
   streamUrl?: string;
   provider?: 'netflix' | 'paramount' | 'prime' | 'disney' | 'w3labs';
+  currentProgram?: string;
+  progress?: number;
 }
 
 export interface CurrentStream {

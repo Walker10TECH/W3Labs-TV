@@ -78,7 +78,7 @@ export default function ChannelShelf({
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={{ paddingLeft: 24 * scale, paddingRight: 8 * scale }}
         getItemLayout={(data, index) => {
-          const cardWidth = (isMobile ? 130 : 180) * scale + 16 * scale;
+          const cardWidth = (isMobile ? 140 : 210) * scale + 16 * scale;
           return { length: cardWidth, offset: cardWidth * index, index };
         }}
       />

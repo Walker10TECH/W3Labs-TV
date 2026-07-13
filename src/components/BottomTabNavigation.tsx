@@ -1,5 +1,5 @@
-import React from 'react';
-import { StyleSheet, View, Text, Pressable, ViewStyle, TextStyle } from 'react-native';
+import React, { useRef, useEffect } from 'react';
+import { StyleSheet, View, Text, Pressable, ViewStyle, TextStyle, Platform, Animated } from 'react-native';
 import { FontAwesome5 } from '@expo/vector-icons';
 import { theme } from '../theme';
 
@@ -12,39 +12,50 @@ export default function BottomTabNavigation({
   activeTab,
   setActiveTab,
 }: BottomTabNavigationProps) {
+
+  const TabButton = ({ tab, label, icon }: { tab: 'home' | 'favorites' | 'search'; label: string; icon: string }) => {
+    const active = activeTab === tab;
+    const scaleAnim = useRef(new Animated.Value(1)).current;
+
+    useEffect(() => {
+      Animated.spring(scaleAnim, {
+        toValue: active ? 1.15 : 1,
+        useNativeDriver: true,
+        friction: 5,
+      }).start();
+    }, [active]);
+
+    return (
+      <Pressable 
+        onPress={() => setActiveTab(tab)} 
+        style={styles.bottomNavBtn}
+      >
+        <Animated.View style={{ transform: [{ scale: scaleAnim }], alignItems: 'center', justifyContent: 'center' }}>
+          <FontAwesome5 
+            name={icon} 
+            size={16} 
+            color={active ? theme.text : theme.textMuted} 
+            solid={active && tab === 'favorites'} 
+          />
+        </Animated.View>
+        <Text style={[styles.bottomNavText, active && { color: '#fff' }]}>{label}</Text>
+      </Pressable>
+    );
+  };
+
   return (
-    <View style={styles.bottomNavContainer}>
-      <Pressable 
-        onPress={() => setActiveTab('home')} 
-        style={[styles.bottomNavBtn, activeTab === 'home' && styles.bottomNavBtnActive]}
-      >
-        <FontAwesome5 name="home" size={16} color={activeTab === 'home' ? theme.primary : theme.textMuted} />
-        <Text style={[styles.bottomNavText, activeTab === 'home' && { color: theme.primary }]}>Início</Text>
-      </Pressable>
-
-      <Pressable 
-        onPress={() => setActiveTab('favorites')} 
-        style={[styles.bottomNavBtn, activeTab === 'favorites' && styles.bottomNavBtnActive]}
-      >
-        <FontAwesome5 name="heart" size={16} color={activeTab === 'favorites' ? theme.primary : theme.textMuted} />
-        <Text style={[styles.bottomNavText, activeTab === 'favorites' && { color: theme.primary }]}>Favoritos</Text>
-      </Pressable>
-
-      <Pressable 
-        onPress={() => setActiveTab('search')} 
-        style={[styles.bottomNavBtn, activeTab === 'search' && styles.bottomNavBtnActive]}
-      >
-        <FontAwesome5 name="search" size={16} color={activeTab === 'search' ? theme.primary : theme.textMuted} />
-        <Text style={[styles.bottomNavText, activeTab === 'search' && { color: theme.primary }]}>Busca</Text>
-      </Pressable>
+    <View style={[styles.bottomNavContainer, Platform.OS === 'web' && styles.webGlassNav as any]}>
+      <TabButton tab="home" label="Início" icon="home" />
+      <TabButton tab="favorites" label="Favoritos" icon="heart" />
+      <TabButton tab="search" label="Busca" icon="search" />
     </View>
   );
 }
 
 interface Styles {
   bottomNavContainer: ViewStyle;
+  webGlassNav: ViewStyle;
   bottomNavBtn: ViewStyle;
-  bottomNavBtnActive: ViewStyle;
   bottomNavText: TextStyle;
 }
 
@@ -52,22 +63,30 @@ const styles = StyleSheet.create<Styles>({
   bottomNavContainer: {
     flexDirection: 'row',
     height: 60,
-    backgroundColor: theme.surface,
-    borderTopWidth: 1.5,
-    borderColor: theme.border,
+    backgroundColor: theme.bg,
+    borderTopWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.08)',
     justifyContent: 'space-around',
     alignItems: 'center',
+    position: 'relative',
+  },
+  webGlassNav: {
+    backgroundColor: 'rgba(15, 15, 15, 0.95)',
+    // @ts-ignore
+    backdropFilter: 'blur(20px)',
   },
   bottomNavBtn: {
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 4,
     flex: 1,
+    height: '100%',
+    paddingTop: 6,
   },
-  bottomNavBtnActive: {},
   bottomNavText: {
     color: theme.textMuted,
     fontSize: 10,
     fontWeight: '700',
+    marginTop: 4,
+    letterSpacing: 0.2,
   },
 });

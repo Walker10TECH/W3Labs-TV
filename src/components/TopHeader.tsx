@@ -1,7 +1,8 @@
-import React from 'react';
-import { StyleSheet, View, Text, Pressable, ViewStyle, TextStyle } from 'react-native';
+import React, { useState } from 'react';
+import { StyleSheet, View, Text, Pressable, ViewStyle, TextStyle, Platform } from 'react-native';
 import { FontAwesome5 } from '@expo/vector-icons';
 import { theme } from '../theme';
+import { usePlayerContext } from '../context/PlayerContext';
 
 interface TopHeaderProps {
   isMobile: boolean;
@@ -30,98 +31,145 @@ export default function TopHeader({
     return tvFocusSection === 'menu' && tvFocusIdx === idx;
   };
 
+  const { handleChromecast, currentStream } = usePlayerContext();
+
+  const onCastPress = () => {
+    handleChromecast((msg: string) => {
+      if (Platform.OS === 'web') {
+        window.alert(msg);
+      } else {
+        alert(msg);
+      }
+    });
+  };
+
+  // Generic Button Component for Navigation Items
+  const NavItem = ({ 
+    tab, 
+    label, 
+    icon, 
+    tvIndex 
+  }: { 
+    tab: 'home' | 'favorites' | 'search'; 
+    label: string; 
+    icon: string;
+    tvIndex: number;
+  }) => {
+    const [hovered, setHovered] = useState(false);
+    const active = activeTab === tab;
+    const focused = isTVFocused(tvIndex);
+
+    return (
+      <Pressable
+        onPress={() => setActiveTab(tab)}
+        onHoverIn={() => setHovered(true)}
+        onHoverOut={() => setHovered(false)}
+        style={[
+          styles.navBtn,
+          active && styles.navBtnActive,
+          focused && styles.navBtnFocused,
+          hovered && styles.navBtnHovered,
+        ]}
+      >
+        <FontAwesome5 
+          name={icon} 
+          size={12 * scale} 
+          color={active ? '#fff' : (focused ? theme.yellow : (hovered ? '#fff' : theme.textMuted))} 
+          style={{ marginRight: 6 * scale }} 
+        />
+        <Text style={[
+          styles.navBtnText, 
+          active && styles.navBtnTextActive,
+          focused && { color: theme.yellow },
+          hovered && { color: '#fff' }
+        ]}>
+          {label}
+        </Text>
+      </Pressable>
+    );
+  };
+
+  // TV Mode toggle component
+  const TVModeButton = () => {
+    if (!onToggleTVMode) return null;
+    const [hovered, setHovered] = useState(false);
+    const active = isTVMode;
+    const focused = isTVFocused(3);
+
+    return (
+      <Pressable 
+        onPress={onToggleTVMode}
+        onHoverIn={() => setHovered(true)}
+        onHoverOut={() => setHovered(false)}
+        style={[
+          styles.navBtn, 
+          active && styles.navBtnTVActive,
+          focused && styles.navBtnFocused,
+          hovered && styles.navBtnHovered,
+        ]}
+      >
+        <FontAwesome5 
+          name="tv" 
+          size={11 * scale} 
+          color={active ? '#fff' : (focused ? theme.yellow : (hovered ? '#fff' : theme.textMuted))} 
+          style={{ marginRight: 6 * scale }} 
+        />
+        <Text style={[
+          styles.navBtnText, 
+          active && styles.navBtnTextActive,
+          focused && { color: theme.yellow },
+          hovered && { color: '#fff' }
+        ]}>
+          Modo TV
+        </Text>
+      </Pressable>
+    );
+  };
+
   return (
-    <View style={[styles.headerContainer, { height: (isMobile ? 60 : 72) * scale }]}>
-      {/* Logo */}
+    <View style={[
+      styles.headerContainer, 
+      { height: (isMobile ? 64 : 76) * scale },
+      Platform.OS === 'web' && styles.webGlassHeader as any
+    ]}>
+      {/* Brand Logo - Prime Video Style */}
       <View style={styles.headerLogoContainer}>
-        <FontAwesome5 name="play" size={16 * scale} color={theme.w3labs} style={{ marginRight: 2 }} />
         <Text style={[styles.headerLogoText, { fontSize: 20 * scale }]}>
-          W3Labs<Text style={{ color: theme.primary }}>+</Text>
+          W3Labs <Text style={{ color: theme.primary, fontWeight: '300' }}>TV</Text>
         </Text>
       </View>
 
-      {/* Navegação Centro (Apenas Desktop / TV Mode ativo) */}
+      {/* Central Navigation Menu (Web Browsers or TV Screen sizes only) */}
       {(!isMobile || isTVMode) && (
         <View style={styles.headerNav}>
-          <Pressable 
-            onPress={() => setActiveTab('home')}
-            style={[
-              styles.navBtn, 
-              activeTab === 'home' && styles.navBtnActive,
-              isTVFocused(0) && styles.navBtnFocused
-            ]}
-          >
-            <Text style={[
-              styles.navBtnText, 
-              activeTab === 'home' && styles.navBtnTextActive,
-              isTVFocused(0) && { color: theme.yellow }
-            ]}>Início</Text>
-          </Pressable>
-          <Pressable 
-            onPress={() => setActiveTab('favorites')}
-            style={[
-              styles.navBtn, 
-              activeTab === 'favorites' && styles.navBtnActive,
-              isTVFocused(1) && styles.navBtnFocused
-            ]}
-          >
-            <Text style={[
-              styles.navBtnText, 
-              activeTab === 'favorites' && styles.navBtnTextActive,
-              isTVFocused(1) && { color: theme.yellow }
-            ]}>Favoritos</Text>
-          </Pressable>
-          <Pressable 
-            onPress={() => setActiveTab('search')}
-            style={[
-              styles.navBtn, 
-              activeTab === 'search' && styles.navBtnActive,
-              isTVFocused(2) && styles.navBtnFocused
-            ]}
-          >
-            <Text style={[
-              styles.navBtnText, 
-              activeTab === 'search' && styles.navBtnTextActive,
-              isTVFocused(2) && { color: theme.yellow }
-            ]}>Pesquisar</Text>
-          </Pressable>
-
-          {/* TV Mode Toggle Button */}
-          {onToggleTVMode && (
-            <Pressable 
-              onPress={onToggleTVMode}
-              style={[
-                styles.navBtn, 
-                isTVMode && styles.navBtnTVActive,
-                isTVFocused(3) && styles.navBtnFocused
-              ]}
-            >
-              <FontAwesome5 
-                name="tv" 
-                size={11 * scale} 
-                color={isTVMode ? theme.primary : theme.textMuted} 
-                style={{ marginRight: 6 }} 
-              />
-              <Text style={[
-                styles.navBtnText, 
-                isTVMode && styles.navBtnTextActive,
-                isTVFocused(3) && { color: theme.yellow }
-              ]}>Modo TV</Text>
-            </Pressable>
-          )}
+          <NavItem tab="home" label="Início" icon="home" tvIndex={0} />
+          <NavItem tab="favorites" label="Favoritos" icon="heart" tvIndex={1} />
+          <NavItem tab="search" label="Pesquisar" icon="search" tvIndex={2} />
+          <TVModeButton />
         </View>
       )}
 
-      {/* Direita (Relógio e Perfil) */}
+      {/* Right Side Widgets (Time Badge and Profile) */}
       <View style={styles.headerRight}>
+        {currentStream && (
+          <Pressable onPress={onCastPress} style={[styles.timeBadge, { paddingHorizontal: 10 }]}>
+            <FontAwesome5 name="chromecast" size={14 * scale} color={theme.primary} />
+          </Pressable>
+        )}
         {time ? (
-          <Text style={[styles.headerTime, { fontSize: 14 * scale }]}>
-            <FontAwesome5 name="clock" size={12 * scale} color={theme.yellow} style={{ marginRight: 6 }} />
-            {time}
-          </Text>
+          <View style={styles.timeBadge}>
+            <FontAwesome5 name="clock" size={12 * scale} color={theme.yellow} style={{ marginRight: 6 * scale }} />
+            <Text style={[styles.headerTime, { fontSize: 13 * scale }]}>
+              {time}
+            </Text>
+          </View>
         ) : null}
-        <View style={[styles.profileAvatar, { width: 32 * scale, height: 32 * scale }]}>
-          <Text style={[styles.avatarText, { fontSize: 12 * scale }]}>W3</Text>
+        
+        <View style={[styles.profileAvatarWrapper, { width: 34 * scale, height: 34 * scale }]}>
+          <View style={[styles.profileAvatar, { width: 34 * scale, height: 34 * scale }]}>
+            <Text style={[styles.avatarText, { fontSize: 11 * scale }]}>W3</Text>
+          </View>
+          <View style={styles.onlineIndicator} />
         </View>
       </View>
     </View>
@@ -130,19 +178,25 @@ export default function TopHeader({
 
 interface Styles {
   headerContainer: ViewStyle;
+  webGlassHeader: ViewStyle;
   headerLogoContainer: ViewStyle;
+  logoIconCircle: ViewStyle;
   headerLogoText: TextStyle;
   headerNav: ViewStyle;
   navBtn: ViewStyle;
   navBtnActive: ViewStyle;
+  navBtnHovered: ViewStyle;
   navBtnFocused: ViewStyle;
   navBtnTVActive: ViewStyle;
   navBtnText: TextStyle;
   navBtnTextActive: TextStyle;
   headerRight: ViewStyle;
+  timeBadge: ViewStyle;
   headerTime: TextStyle;
+  profileAvatarWrapper: ViewStyle;
   profileAvatar: ViewStyle;
   avatarText: TextStyle;
+  onlineIndicator: ViewStyle;
 }
 
 const styles = StyleSheet.create<Styles>({
@@ -152,46 +206,61 @@ const styles = StyleSheet.create<Styles>({
     justifyContent: 'space-between',
     paddingHorizontal: 24,
     backgroundColor: theme.bg,
-    borderBottomWidth: 1.5,
-    borderColor: theme.border,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255, 255, 255, 0.08)',
+  },
+  webGlassHeader: {
+    backgroundColor: 'rgba(15, 15, 15, 0.95)',
+    // @ts-ignore
+    backdropFilter: 'blur(20px)',
+    position: 'sticky' as any,
+    top: 0,
+    zIndex: 1000,
   },
   headerLogoContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 10,
+  },
+  logoIconCircle: {
+    display: 'none',
   },
   headerLogoText: {
     color: '#fff',
-    fontWeight: '900',
+    fontWeight: '800',
     letterSpacing: -0.5,
   },
   headerNav: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 20,
   },
   navBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20,
+    paddingHorizontal: 4,
+    paddingVertical: 12,
     backgroundColor: 'transparent',
-    borderWidth: 1,
-    borderColor: 'transparent',
+    borderBottomWidth: 2,
+    borderBottomColor: 'transparent',
+    ...Platform.select({
+      web: {
+        transition: 'all 0.2s ease-in-out',
+      } as any,
+      default: {},
+    }),
   },
   navBtnActive: {
-    backgroundColor: 'rgba(236, 72, 153, 0.08)',
-    borderColor: 'rgba(236, 72, 153, 0.25)',
+    borderBottomColor: theme.text,
+  },
+  navBtnHovered: {
+    borderBottomColor: 'rgba(255, 255, 255, 0.4)',
   },
   navBtnFocused: {
-    backgroundColor: 'rgba(250, 204, 21, 0.1)',
-    borderColor: theme.yellow,
-    borderWidth: 1.5,
+    borderBottomColor: theme.yellow,
   },
   navBtnTVActive: {
-    backgroundColor: 'rgba(236, 72, 153, 0.12)',
-    borderColor: theme.primary,
+    borderBottomColor: theme.primary,
   },
   navBtnText: {
     color: theme.textMuted,
@@ -199,25 +268,53 @@ const styles = StyleSheet.create<Styles>({
     fontSize: 14,
   },
   navBtnTextActive: {
-    color: theme.primary,
+    color: '#fff',
   },
   headerRight: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 16,
   },
+  timeBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.04)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.08)',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+  },
   headerTime: {
     color: theme.text,
     fontWeight: '700',
   },
-  profileAvatar: {
-    borderRadius: 999,
-    backgroundColor: theme.orange,
+  profileAvatarWrapper: {
+    position: 'relative',
     alignItems: 'center',
     justifyContent: 'center',
   },
+  profileAvatar: {
+    borderRadius: 999,
+    backgroundColor: theme.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1.5,
+    borderColor: 'rgba(255, 255, 255, 0.2)',
+  },
   avatarText: {
     color: '#fff',
-    fontWeight: 'bold',
+    fontWeight: '900',
+  },
+  onlineIndicator: {
+    position: 'absolute',
+    bottom: 0,
+    right: 0,
+    width: 9,
+    height: 9,
+    borderRadius: 99,
+    backgroundColor: '#10b981',
+    borderWidth: 1.5,
+    borderColor: theme.bg,
   },
 });

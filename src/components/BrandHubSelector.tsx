@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { StyleSheet, View, Text, Pressable, Platform, ViewStyle, TextStyle, ScrollView, useWindowDimensions } from 'react-native';
+import { StyleSheet, View, Text, Pressable, Platform, ViewStyle, TextStyle } from 'react-native';
 import { FontAwesome5 } from '@expo/vector-icons';
 import { theme } from '../theme';
 
@@ -16,120 +16,86 @@ export default function CategorySelector({
   setSelectedCategory,
   scale,
 }: CategorySelectorProps) {
-  const { width } = useWindowDimensions();
-  const isMobileSize = width < 768;
+  const [isOpen, setIsOpen] = useState(false);
 
-  const categories: { id: CategoryType; label: string; icon: string; color: string }[] = [
-    { id: 'all', label: 'TUDO', icon: 'border-all', color: theme.primary },
-    { id: 'notícias', label: 'NOTÍCIAS', icon: 'newspaper', color: theme.w3labs },
-    { id: 'filmes', label: 'FILMES', icon: 'film', color: theme.netflix },
-    { id: 'infantil', label: 'INFANTIL', icon: 'child', color: theme.disney },
-    { id: 'esportes', label: 'ESPORTES', icon: 'futbol', color: theme.prime },
+  const categories: { id: CategoryType; label: string; icon: string }[] = [
+    { id: 'all', label: 'TUDO', icon: 'border-all' },
+    { id: 'notícias', label: 'NOTÍCIAS', icon: 'newspaper' },
+    { id: 'filmes', label: 'FILMES', icon: 'film' },
+    { id: 'infantil', label: 'INFANTIL', icon: 'child' },
+    { id: 'esportes', label: 'ESPORTES', icon: 'futbol' },
   ];
 
-  // Mobile layout: render selectors inside a horizontal ScrollView
-  if (isMobileSize) {
-    return (
-      <View style={styles.container}>
-        <Text style={[styles.sectionTitle, { fontSize: 13 * scale }]}>CATEGORIAS</Text>
-        <ScrollView 
-          horizontal 
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.mobileCategoryScroll}
-        >
-          {categories.map((cat) => {
-            const isActive = selectedCategory === cat.id;
-            const isHighlighted = isActive;
+  const activeCategory = categories.find(c => c.id === selectedCategory) || categories[0];
 
-            return (
-              <Pressable
-                key={cat.id}
-                onPress={() => setSelectedCategory(cat.id)}
-                style={[
-                  styles.categoryCardMobile,
-                  { borderColor: isHighlighted ? cat.color : 'rgba(255, 255, 255, 0.08)' },
-                  isActive && { backgroundColor: 'rgba(255, 255, 255, 0.04)' },
-                ]}
-              >
-                <FontAwesome5 
-                  name={cat.icon} 
-                  size={14 * scale} 
-                  color={isHighlighted ? cat.color : theme.textMuted} 
-                />
-                <Text 
-                  style={[
-                    styles.categoryText, 
-                    { fontSize: 10 * scale },
-                    isHighlighted && { color: '#fff' }
-                  ]}
-                >
-                  {cat.label}
-                </Text>
-              </Pressable>
-            );
-          })}
-        </ScrollView>
-      </View>
-    );
-  }
-
-  // Desktop layout: render category cards in a flex grid
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { zIndex: 9999 }]}>
       <Text style={[styles.sectionTitle, { fontSize: 13 * scale }]}>CATEGORIAS</Text>
-      <View style={styles.categoryRow}>
-        {categories.map((cat) => {
-          const [hovered, setHovered] = useState(false);
-          const isActive = selectedCategory === cat.id;
-          const isHighlighted = hovered || isActive;
 
-          return (
-            <Pressable
-              key={cat.id}
-              onPress={() => setSelectedCategory(cat.id)}
-              onHoverIn={() => setHovered(true)}
-              onHoverOut={() => setHovered(false)}
-              style={[
-                styles.categoryCard,
-                { borderColor: isHighlighted ? cat.color : 'rgba(255, 255, 255, 0.08)' },
-                isActive && { backgroundColor: 'rgba(255, 255, 255, 0.04)' },
-                hovered && styles.categoryCardHovered,
-                Platform.OS === 'web' && isHighlighted && {
-                  boxShadow: `0px 6px 20px ${cat.color}33`,
-                } as any,
-              ]}
-            >
-              <FontAwesome5 
-                name={cat.icon} 
-                size={18 * scale} 
-                color={isHighlighted ? cat.color : theme.textMuted} 
+      <View style={{ zIndex: 10, position: 'relative' }}>
+        <Pressable 
+          style={[styles.header, isOpen && styles.headerOpen, { width: 260 * scale, height: 42 * scale }]}
+          onPress={() => setIsOpen(!isOpen)}
+        >
+          <View style={styles.headerContent}>
+            <FontAwesome5 name={activeCategory.icon} size={12 * scale} color="#313144" style={{ marginRight: 10 * scale }} />
+            <Text style={[styles.menuLabel, { fontSize: 12 * scale }]}>{activeCategory.label}</Text>
+          </View>
+          <FontAwesome5 name={isOpen ? 'chevron-up' : 'chevron-down'} size={12 * scale} color="#313144" />
+        </Pressable>
+
+        {isOpen && (
+          <View style={[styles.itemsList, { width: 260 * scale, top: 41 * scale }]}>
+            {categories.map((cat) => (
+              <DropdownItem 
+                key={cat.id} 
+                cat={cat} 
+                scale={scale} 
+                onSelect={() => {
+                  setSelectedCategory(cat.id);
+                  setIsOpen(false);
+                }} 
               />
-              <Text 
-                style={[
-                  styles.categoryText, 
-                  { fontSize: 11 * scale },
-                  isHighlighted && { color: '#fff' }
-                ]}
-              >
-                {cat.label}
-              </Text>
-            </Pressable>
-          );
-        })}
+            ))}
+          </View>
+        )}
       </View>
     </View>
+  );
+}
+
+function DropdownItem({ cat, scale, onSelect }: any) {
+  const [hovered, setHovered] = useState(false);
+
+  return (
+    <Pressable
+      onHoverIn={() => setHovered(true)}
+      onHoverOut={() => setHovered(false)}
+      onPress={onSelect}
+      style={[
+        styles.item,
+        { height: 42 * scale, paddingHorizontal: 24 * scale },
+        hovered && styles.itemHovered
+      ]}
+    >
+      <View style={styles.headerContent}>
+        <FontAwesome5 name={cat.icon} size={12 * scale} color="#313144" style={{ marginRight: 10 * scale }} />
+        <Text style={[styles.menuLabel, { fontSize: 12 * scale }]}>{cat.label}</Text>
+      </View>
+    </Pressable>
   );
 }
 
 interface Styles {
   container: ViewStyle;
   sectionTitle: TextStyle;
-  categoryRow: ViewStyle;
-  categoryCard: ViewStyle;
-  categoryCardHovered: ViewStyle;
-  categoryText: TextStyle;
-  mobileCategoryScroll: ViewStyle;
-  categoryCardMobile: ViewStyle;
+  header: ViewStyle;
+  headerOpen: ViewStyle;
+  headerContent: ViewStyle;
+  menuLabel: TextStyle;
+  itemsList: ViewStyle;
+  item: ViewStyle;
+  itemHovered: ViewStyle;
 }
 
 const styles = StyleSheet.create<Styles>({
@@ -143,47 +109,50 @@ const styles = StyleSheet.create<Styles>({
     letterSpacing: 0.8,
     marginBottom: 12,
   },
-  categoryRow: {
+  header: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 12,
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 18,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1.3,
+    borderColor: '#215AFF',
+    borderRadius: 8,
   },
-  categoryCard: {
-    flex: 1,
-    minWidth: 120,
+  headerOpen: {
+    borderBottomLeftRadius: 0,
+    borderBottomRightRadius: 0,
+  },
+  headerContent: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    gap: 10,
-    backgroundColor: '#0c0f1d',
-    borderWidth: 1.5,
-    borderRadius: 12,
-    paddingVertical: 14,
-    paddingHorizontal: 16,
   },
-  categoryCardHovered: {
-    transform: [{ scale: 1.03 }],
+  menuLabel: {
+    fontFamily: Platform.OS === 'web' ? 'Poppins, sans-serif' : 'System',
+    fontWeight: '500',
+    color: '#313144',
+    letterSpacing: 0.36, // 0.03em approx
   },
-  categoryText: {
-    color: theme.textMuted,
-    fontWeight: '900',
-    letterSpacing: 0.5,
+  itemsList: {
+    position: 'absolute',
+    left: 0,
+    backgroundColor: '#FFFFFF',
+    borderBottomLeftRadius: 8,
+    borderBottomRightRadius: 8,
+    borderWidth: 1.3,
+    borderTopWidth: 0,
+    borderColor: '#215AFF',
+    overflow: 'hidden',
+    zIndex: 9999,
   },
-  mobileCategoryScroll: {
-    gap: 10,
-    paddingRight: 24,
-  },
-  categoryCardMobile: {
-    width: 130,
+  item: {
     flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    backgroundColor: '#0c0f1d',
-    borderWidth: 1.5,
-    borderRadius: 12,
-    paddingVertical: 12,
-    paddingHorizontal: 12,
+    backgroundColor: '#FFFFFF',
+  },
+  itemHovered: {
+    backgroundColor: '#C4CBDF',
   },
 });
 export type { CategoryType };

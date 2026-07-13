@@ -3,7 +3,8 @@ import { StyleSheet, View, Text, Image, Pressable, ViewStyle, TextStyle, ImageSt
 import { FontAwesome5 } from '@expo/vector-icons';
 import { theme } from '../theme';
 import { Channel, CurrentStream } from '../types';
-import { getEPGForChannel } from '../mockData';
+import { Program } from '../mockData';
+import { fetchLiveEPG } from '../services/epg';
 
 interface DetailsPanelProps {
   currentStream: CurrentStream | null;
@@ -27,16 +28,26 @@ export default function DetailsPanel({
   isTVMode = false,
 }: DetailsPanelProps) {
   const [logoError, setLogoError] = useState(false);
+  const [epg, setEpg] = useState<Program | null>(null);
 
   useEffect(() => {
     setLogoError(false);
+    
+    let isMounted = true;
+    if (currentStream) {
+      setEpg(null); // Clear previous EPG while loading
+      fetchLiveEPG(currentStream.title, currentStream.category).then((data) => {
+        if (isMounted) setEpg(data);
+      });
+    }
+    
+    return () => {
+      isMounted = false;
+    };
   }, [currentStream]);
 
   if (!currentStream) return null;
   const isFav = favoriteNames.includes(currentStream.title);
-
-  // Fetch dynamic Electronic Program Guide (EPG)
-  const epg = getEPGForChannel(currentStream.title, currentStream.category);
 
   return (
     <View style={[
@@ -100,24 +111,24 @@ export default function DetailsPanel({
         </Text>
 
         <View style={styles.detailsActions}>
+          <View style={styles.liveIndicatorButton}>
+            <FontAwesome5 name="play" size={11 * scale} color="#0f1a24" style={{ marginRight: 8 }} solid />
+            <Text style={styles.liveIndicatorButtonText}>NO AR</Text>
+          </View>
+
           <Pressable 
             onPress={() => toggleFavorite(allChannels.find(c => c.name === currentStream.title) || { name: currentStream.title })}
-            style={[styles.actionBtn, isFav && styles.actionBtnFav]}
+            style={[styles.circularActionBtn, isFav && styles.circularActionBtnActive]}
           >
             <FontAwesome5 
-              name="heart" 
+              name={isFav ? 'check' : 'plus'} 
               size={13 * scale} 
-              color={isFav ? '#fff' : theme.primary} 
-              solid={isFav} 
+              color="#fff" 
             />
-            <Text style={[styles.actionBtnText, isFav && { color: '#fff' }]}>
-              {isFav ? 'Favoritado' : 'Favoritar'}
-            </Text>
           </Pressable>
 
-          <Pressable onPress={handleChromecast} style={styles.actionBtn}>
-            <FontAwesome5 name="chromecast" size={13 * scale} color={theme.orange} />
-            <Text style={styles.actionBtnText}>Transmitir</Text>
+          <Pressable onPress={handleChromecast} style={styles.circularActionBtn}>
+            <FontAwesome5 name="chromecast" size={13 * scale} color="#fff" />
           </Pressable>
         </View>
       </View>
@@ -136,9 +147,10 @@ interface Styles {
   detailsTitle: TextStyle;
   detailsDescription: TextStyle;
   detailsActions: ViewStyle;
-  actionBtn: ViewStyle;
-  actionBtnFav: ViewStyle;
-  actionBtnText: TextStyle;
+  liveIndicatorButton: ViewStyle;
+  liveIndicatorButtonText: TextStyle;
+  circularActionBtn: ViewStyle;
+  circularActionBtnActive: ViewStyle;
   // EPG STYLES
   epgContainer: ViewStyle;
   epgHeader: TextStyle;
@@ -162,9 +174,9 @@ const styles = StyleSheet.create<Styles>({
     alignItems: 'center',
   },
   detailsLogo: {
-    borderRadius: 12,
+    borderRadius: 6,
     borderWidth: 1.5,
-    borderColor: theme.border,
+    borderColor: 'rgba(255, 255, 255, 0.08)',
     backgroundColor: '#000',
     padding: 4,
   },
@@ -177,7 +189,7 @@ const styles = StyleSheet.create<Styles>({
     backgroundColor: theme.live,
     paddingHorizontal: 8,
     paddingVertical: 3,
-    borderRadius: 4,
+    borderRadius: 3,
   },
   liveDetailsBadgeText: {
     color: '#fff',
@@ -186,14 +198,14 @@ const styles = StyleSheet.create<Styles>({
     letterSpacing: 0.5,
   },
   detailsCategory: {
-    color: theme.orange,
+    color: theme.primary,
     fontSize: 11,
     fontWeight: '800',
     textTransform: 'uppercase',
   },
   detailsTitle: {
     color: theme.text,
-    fontWeight: '900',
+    fontWeight: '800',
     marginTop: 4,
   },
   detailsDescription: {
@@ -202,34 +214,43 @@ const styles = StyleSheet.create<Styles>({
   },
   detailsActions: {
     flexDirection: 'row',
+    alignItems: 'center',
     gap: 12,
   },
-  actionBtn: {
+  liveIndicatorButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    backgroundColor: theme.surfaceMuted,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 24,
-    borderWidth: 1.5,
-    borderColor: theme.border,
+    backgroundColor: '#ff9900',
+    paddingHorizontal: 22,
+    paddingVertical: 12,
+    borderRadius: 4,
   },
-  actionBtnFav: {
-    backgroundColor: theme.primary,
-    borderColor: theme.primary,
-  },
-  actionBtnText: {
-    color: '#fff',
-    fontWeight: '700',
+  liveIndicatorButtonText: {
+    color: '#0f1a24',
+    fontWeight: '900',
     fontSize: 13,
+    letterSpacing: 0.5,
+  },
+  circularActionBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 99,
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1.5,
+    borderColor: 'rgba(255, 255, 255, 0.15)',
+  },
+  circularActionBtnActive: {
+    backgroundColor: 'transparent',
+    borderColor: theme.primary,
   },
   // EPG STYLES
   epgContainer: {
-    backgroundColor: 'rgba(236, 72, 153, 0.05)',
+    backgroundColor: 'rgba(255, 255, 255, 0.03)',
     borderWidth: 1,
-    borderColor: 'rgba(236, 72, 153, 0.15)',
-    borderRadius: 12,
+    borderColor: 'rgba(255, 255, 255, 0.08)',
+    borderRadius: 6,
     padding: 12,
   },
   epgHeader: {

@@ -52,16 +52,16 @@ export default function ChannelCard({
       onHoverOut={() => setHovered(false)}
       style={[
         styles.cardContainer,
-        { width: (isMobile ? 130 : 180) * scale, marginRight: 16 * scale },
+        { width: (isMobile ? 140 : 210) * scale, marginRight: 16 * scale },
         isActive && styles.cardContainerActive
       ]}
     >
       <View style={[
         styles.cardMedia, 
         isActive && styles.cardMediaActive,
-        isActive && { borderColor: providerColor },
+        isActive && { borderColor: theme.text },
         Platform.OS === 'web' && isActive && {
-          boxShadow: `0px 8px 24px ${providerColor}3b`,
+          boxShadow: `0px 6px 18px rgba(255, 255, 255, 0.1)`,
         } as any
       ]}>
         {(!imageError && (item.logo_url || item.logo)) ? (
@@ -82,6 +82,13 @@ export default function ChannelCard({
           <Text style={styles.liveBadgeText}>AO VIVO</Text>
         </View>
 
+        {item.provider === 'prime' && (
+          <View style={styles.primeBadge}>
+            <FontAwesome5 name="check" size={8 * scale} color="#000" solid />
+            <Text style={styles.primeBadgeText}>prime</Text>
+          </View>
+        )}
+
         {isFav && (
           <View style={styles.cardFavBadge}>
             <FontAwesome5 name="heart" size={10 * scale} color={theme.netflix} solid />
@@ -89,9 +96,15 @@ export default function ChannelCard({
         )}
       </View>
       <Text style={styles.cardTitle} numberOfLines={1}>{item.name}</Text>
-      <Text style={[styles.cardCategory, { color: providerColor }]} numberOfLines={1}>
-        {getProviderLabel() || item.category || 'TV'}
-      </Text>
+      {item.currentProgram ? (
+        <Text style={[styles.cardCategory, { color: '#aaa', fontWeight: '600' }]} numberOfLines={1}>
+          {item.currentProgram}
+        </Text>
+      ) : (
+        <Text style={[styles.cardCategory, { color: providerColor }]} numberOfLines={1}>
+          {getProviderLabel() || item.category || 'TV'}
+        </Text>
+      )}
     </Pressable>
   );
 }
@@ -106,6 +119,8 @@ interface Styles {
   liveBadge: ViewStyle;
   liveDot: ViewStyle;
   liveBadgeText: TextStyle;
+  primeBadge: ViewStyle;
+  primeBadgeText: TextStyle;
   cardFavBadge: ViewStyle;
   cardTitle: TextStyle;
   cardCategory: TextStyle;
@@ -117,13 +132,13 @@ const styles = StyleSheet.create<Styles>({
     overflow: 'hidden',
   },
   cardContainerActive: {
-    transform: [{ scale: 1.05 }],
+    transform: [{ scale: 1.04 }],
   },
   cardMedia: {
-    aspectRatio: 1.6,
+    aspectRatio: 1.777,
     borderRadius: 12,
     backgroundColor: theme.surface,
-    borderWidth: 1.5,
+    borderWidth: 1,
     borderColor: theme.border,
     alignItems: 'center',
     justifyContent: 'center',
@@ -134,8 +149,8 @@ const styles = StyleSheet.create<Styles>({
     backgroundColor: theme.surfaceHover,
   },
   cardLogo: {
-    width: '75%',
-    height: '75%',
+    width: '70%',
+    height: '70%',
   },
   cardFallbackLogo: {
     alignItems: 'center',
@@ -151,11 +166,11 @@ const styles = StyleSheet.create<Styles>({
     gap: 4,
     paddingHorizontal: 6,
     paddingVertical: 2,
-    borderRadius: 4,
+    borderRadius: 3,
   },
   liveDot: {
-    width: 6,
-    height: 6,
+    width: 5,
+    height: 5,
     borderRadius: 99,
     backgroundColor: '#fff',
   },
@@ -165,26 +180,44 @@ const styles = StyleSheet.create<Styles>({
     fontWeight: '900',
     letterSpacing: 0.5,
   },
+  primeBadge: {
+    position: 'absolute',
+    bottom: 8,
+    right: 8,
+    backgroundColor: theme.primary,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 3,
+  },
+  primeBadgeText: {
+    color: '#000',
+    fontSize: 8,
+    fontWeight: '900',
+    letterSpacing: 0.2,
+  },
   cardFavBadge: {
     position: 'absolute',
     top: 8,
     right: 8,
-    backgroundColor: 'rgba(0, 0, 0, 0.4)',
+    backgroundColor: 'rgba(0, 0, 0, 0.65)',
     padding: 4,
     borderRadius: 99,
   },
   cardTitle: {
     color: theme.text,
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '700',
-    marginTop: 8,
-    paddingHorizontal: 4,
+    marginTop: 6,
+    paddingHorizontal: 2,
   },
   cardCategory: {
     fontSize: 10,
     fontWeight: '800',
     marginTop: 2,
-    paddingHorizontal: 4,
+    paddingHorizontal: 2,
     textTransform: 'uppercase',
     letterSpacing: 0.3,
   },
