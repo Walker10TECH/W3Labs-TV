@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { View, StyleSheet, Animated, Text, useWindowDimensions, Pressable } from 'react-native';
+import { XStack } from 'tamagui';
 import { FontAwesome5 } from '@expo/vector-icons';
 
 import { theme } from '../theme';
@@ -26,16 +27,16 @@ export default function MainLayoutWeb() {
   const [isTVMode, setIsTVMode] = useState<boolean>(false);
   const scale = isTVMode ? (is4K ? 2.2 : 1.35) : (is4K ? 1.8 : 1);
   const numColumns = Math.max(2, Math.floor(width / (220 * (isTVMode ? 1.25 : 1))));
-  
-  const { 
+
+  const {
     activeTab, setActiveTab, allChannels, toggleFavorite, favoriteNames,
-    recentChannels, selectedCategory, groupedChannels, favoriteChannels 
+    recentChannels, selectedCategory, groupedChannels, favoriteChannels
   } = useAppContext();
-  
-  const { 
-    currentStream, activeStreamChannel, setActiveStreamChannel, playStream 
+
+  const {
+    currentStream, activeStreamChannel, setActiveStreamChannel, playStream
   } = usePlayerContext();
-  
+
   const [time, setTime] = useState<string>('');
   const toastAnim = useRef(new Animated.Value(150)).current;
   const [toastMsg, setToastMsg] = useState<string>('');
@@ -63,8 +64,8 @@ export default function MainLayoutWeb() {
   const tvShelves = React.useMemo(() => {
     const list: { title: string; channels: Channel[] }[] = [];
     if (recentChannels.length > 0) {
-      const filteredRecents = selectedCategory === 'all' 
-        ? recentChannels 
+      const filteredRecents = selectedCategory === 'all'
+        ? recentChannels
         : recentChannels.filter(c => (c.category || 'Geral').toLowerCase() === selectedCategory);
       if (filteredRecents.length > 0) {
         list.push({ title: 'ASSISTIDOS RECENTEMENTE', channels: filteredRecents });
@@ -98,15 +99,15 @@ export default function MainLayoutWeb() {
     return (
       <View style={[styles.fullscreenPlayerContainer, { flexDirection: 'row' }]}>
         <View style={{ flex: 1, position: 'relative' }}>
-          <CinematicPlayer 
+          <CinematicPlayer
             currentStream={currentStream}
             isMobile={false}
             width={isTVMode ? width : (width > 1024 ? width * 0.75 : width)}
             scale={scale}
           />
 
-          <Pressable 
-            onPress={() => setActiveStreamChannel(null)} 
+          <Pressable
+            onPress={() => setActiveStreamChannel(null)}
             style={styles.floatingBackButton}
           >
             <FontAwesome5 name="arrow-left" size={14 * scale} color="#fff" />
@@ -114,7 +115,7 @@ export default function MainLayoutWeb() {
           </Pressable>
 
           {isTVMode && (
-            <TVPlayerShelf 
+            <TVPlayerShelf
               allChannels={allChannels}
               currentStream={currentStream}
               playStream={(c) => playStream(c, showToast)}
@@ -125,7 +126,7 @@ export default function MainLayoutWeb() {
 
         {!isTVMode && width > 1024 && (
           <View style={{ width: '25%', minWidth: 300, backgroundColor: theme.surfaceMuted }}>
-            <ChannelSidebar 
+            <ChannelSidebar
               allChannels={allChannels}
               currentStream={currentStream}
               playStream={(c) => playStream(c, showToast)}
@@ -142,9 +143,9 @@ export default function MainLayoutWeb() {
     switch (activeTab) {
       case 'home':
         return (
-          <HomeScreen 
-            isMobileSize={isMobileSize} 
-            scale={scale} 
+          <HomeScreen
+            isMobileSize={isMobileSize}
+            scale={scale}
             isTVMode={isTVMode}
             focusSection={focusSection}
             shelfIdx={shelfIdx}
@@ -153,22 +154,22 @@ export default function MainLayoutWeb() {
         );
       case 'favorites':
         return (
-          <FavoritesScreen 
-            isMobileSize={isMobileSize} 
-            scale={scale} 
-            isTVMode={isTVMode} 
-            numColumns={numColumns} 
+          <FavoritesScreen
+            isMobileSize={isMobileSize}
+            scale={scale}
+            isTVMode={isTVMode}
+            numColumns={numColumns}
             focusSection={focusSection}
             channelIdx={channelIdx}
           />
         );
       case 'search':
         return (
-          <SearchScreen 
-            isMobileSize={isMobileSize} 
-            scale={scale} 
-            isTVMode={isTVMode} 
-            numColumns={numColumns} 
+          <SearchScreen
+            isMobileSize={isMobileSize}
+            scale={scale}
+            isTVMode={isTVMode}
+            numColumns={numColumns}
             focusSection={focusSection}
             channelIdx={channelIdx}
           />
@@ -180,7 +181,7 @@ export default function MainLayoutWeb() {
 
   return (
     <View style={[styles.webContainer, { width: '100%', minHeight: '100%' }]}>
-      <TopHeader 
+      <TopHeader
         isMobile={isMobileSize}
         scale={scale}
         time={time}
@@ -197,7 +198,7 @@ export default function MainLayoutWeb() {
       </View>
 
       {isMobileSize && (
-        <BottomTabNavigation 
+        <BottomTabNavigation
           activeTab={activeTab}
           setActiveTab={setActiveTab}
         />
@@ -212,18 +213,33 @@ export default function MainLayoutWeb() {
         </View>
       )}
 
-      <Animated.View style={[
-        styles.toast, 
-        { 
-          transform: [{ translateY: toastAnim }],
-          paddingHorizontal: 24 * scale,
-          paddingVertical: 14 * scale,
-          borderRadius: 16 * scale,
-          bottom: isTVMode ? 60 * scale : (isMobileSize ? 80 * scale : 40 * scale)
-        }
-      ]}>
-        <FontAwesome5 name="exclamation-circle" size={16 * scale} color={theme.live} />
-        <Text style={[styles.toastText, { fontSize: 14 * scale }]}>{toastMsg}</Text>
+      <Animated.View
+        style={[
+          {
+            position: 'absolute',
+            alignSelf: 'center',
+            bottom: isTVMode ? 60 * scale : (isMobileSize ? 80 * scale : 40 * scale),
+            zIndex: 9999,
+            boxShadow: '0px 8px 24px rgba(0, 99, 229, 0.22)',
+          } as any,
+          {
+            transform: [{ translateY: toastAnim }],
+          }
+        ]}
+      >
+        <XStack
+          alignItems="center"
+          gap="$3"
+          backgroundColor="$surfaceMuted"
+          borderWidth={1.5}
+          borderColor="$primary"
+          paddingHorizontal={24 * scale}
+          paddingVertical={14 * scale}
+          borderRadius={16 * scale}
+        >
+          <FontAwesome5 name="exclamation-circle" size={16 * scale} color={theme.live} />
+          <Text style={[styles.toastText, { fontSize: 14 * scale }]}>{toastMsg}</Text>
+        </XStack>
       </Animated.View>
     </View>
   );
@@ -239,19 +255,6 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: theme.bg,
   },
-  toast: {
-    position: 'absolute',
-    alignSelf: 'center',
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: theme.surfaceMuted,
-    borderWidth: 1.5,
-    borderColor: theme.primary,
-    elevation: 24,
-    gap: 10,
-    zIndex: 9999,
-    boxShadow: '0px 8px 24px rgba(0, 99, 229, 0.22)',
-  },
   toastText: {
     color: '#fff',
     fontWeight: '700',
@@ -261,7 +264,7 @@ const styles = StyleSheet.create({
     bottom: 0,
     left: 0,
     right: 0,
-    backgroundColor: 'rgba(9, 11, 19, 0.96)',
+    backgroundColor: 'rgba(6, 7, 19, 0.96)',
     borderTopWidth: 1.5,
     borderColor: theme.primary,
     paddingVertical: 8,
@@ -288,7 +291,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    backgroundColor: 'rgba(9, 11, 19, 0.75)',
+    backgroundColor: 'rgba(6, 7, 19, 0.75)',
     borderWidth: 1.5,
     borderColor: theme.border,
     paddingHorizontal: 16,

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { View, StyleSheet, StatusBar, Animated, Text, useWindowDimensions, ScrollView, Pressable, Platform } from 'react-native';
 import { SafeAreaView, SafeAreaProvider } from 'react-native-safe-area-context';
+import { XStack } from 'tamagui';
 import { FontAwesome5 } from '@expo/vector-icons';
 
 import { theme } from '../theme';
@@ -148,18 +149,33 @@ export default function MainLayout() {
           setActiveTab={setActiveTab}
         />
 
-        <Animated.View style={[
-          styles.toast, 
-          { 
-            transform: [{ translateY: toastAnim }],
-            paddingHorizontal: 20 * scale,
-            paddingVertical: 12 * scale,
-            borderRadius: 12 * scale,
-            bottom: 80 * scale
-          }
-        ]}>
-          <FontAwesome5 name="exclamation-circle" size={16 * scale} color={theme.orange} />
-          <Text style={[styles.toastText, { fontSize: 14 * scale }]}>{toastMsg}</Text>
+        <Animated.View
+          style={[
+            {
+              position: 'absolute',
+              alignSelf: 'center',
+              bottom: 80 * scale,
+              zIndex: 9999,
+            } as any,
+            {
+              transform: [{ translateY: toastAnim }],
+            }
+          ]}
+        >
+          <XStack
+            alignItems="center"
+            gap="$3"
+            backgroundColor="$surfaceMuted"
+            borderWidth={1.5}
+            borderColor="$primary"
+            paddingHorizontal={20 * scale}
+            paddingVertical={12 * scale}
+            borderRadius={12 * scale}
+            elevation={24}
+          >
+            <FontAwesome5 name="exclamation-circle" size={16 * scale} color={theme.orange} /> 
+            <Text style={[styles.toastText, { fontSize: 14 * scale }]}>{toastMsg}</Text> 
+          </XStack>
         </Animated.View>
       </SafeAreaView>
     </SafeAreaProvider>
@@ -174,22 +190,6 @@ const styles = StyleSheet.create({
   mainLayout: {
     flex: 1,
     backgroundColor: theme.bg,
-  },
-  toast: {
-    position: 'absolute',
-    alignSelf: 'center',
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: theme.surfaceMuted,
-    borderWidth: 1.5,
-    borderColor: theme.primary,
-    elevation: 24,
-    gap: 10,
-    zIndex: 9999,
-    shadowColor: theme.primary,
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.3,
-    shadowRadius: 16,
   },
   toastText: {
     color: '#fff',
@@ -206,7 +206,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    backgroundColor: 'rgba(9, 11, 19, 0.75)',
+    backgroundColor: 'rgba(6, 7, 19, 0.75)',
     borderWidth: 1,
     borderColor: theme.border,
     paddingHorizontal: 12,

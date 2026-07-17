@@ -174,7 +174,7 @@ const styles = StyleSheet.create<Styles>({
     bottom: 0,
     left: 0,
     right: 0,
-    backgroundColor: 'rgba(9, 11, 19, 0.85)',
+    backgroundColor: 'rgba(6, 7, 19, 0.85)',
     paddingTop: 24,
     borderTopWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.1)',
@@ -194,7 +194,12 @@ const styles = StyleSheet.create<Styles>({
   cardFocused: {
     borderColor: '#fff',
     transform: [{ scale: 1.05 }],
-    boxShadow: '0 8px 24px rgba(0,0,0,0.5)' as any,
+    ...Platform.select({
+      web: {
+        boxShadow: '0 8px 24px rgba(0,0,0,0.5)' as any,
+      },
+      default: {},
+    }),
   },
   cardPlaying: {
     borderColor: theme.primary,

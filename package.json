@@ -3,27 +3,33 @@
   "version": "1.0.0",
   "main": "index.ts",
   "scripts": {
-    "start": "node start-dev.js",
-    "android": "concurrently \"npm run api\" \"expo start --android\"",
-    "ios": "concurrently \"npm run api\" \"expo start --ios\"",
-    "web": "concurrently \"npm run api\" \"expo start --web\"",
-    "api": "node server.js"
+    "start": "concurrently \"node server.js\" \"expo start\"",
+    "android": "concurrently \"node server.js\" \"expo start --android\"",
+    "ios": "concurrently \"node server.js\" \"expo start --ios\"",
+    "web": "concurrently \"node server.js\" \"expo start --web\""
   },
   "dependencies": {
+    "@expo-google-fonts/inter": "^0.4.2",
     "@expo/vector-icons": "^15.0.3",
+    "@tamagui/babel-plugin": "^2.4.6",
+    "@tamagui/font-inter": "^2.4.6",
+    "babel-preset-expo": "~54.0.10",
     "cors": "^2.8.6",
-    "expo": "~54.0.34",
+    "expo": "~54.0.36",
     "expo-status-bar": "~3.0.9",
     "express": "^5.2.1",
     "react": "19.1.0",
     "react-dom": "19.1.0",
     "react-native": "0.81.5",
     "react-native-google-cast": "^4.9.1",
+    "react-native-reanimated": "~4.1.1",
     "react-native-safe-area-context": "~5.6.0",
     "react-native-web": "^0.21.0",
-    "react-native-webview": "13.15.0"
+    "react-native-webview": "13.15.0",
+    "tamagui": "^2.4.6"
   },
   "devDependencies": {
+    "@tamagui/metro-plugin": "^2.4.6",
     "@types/react": "~19.1.0",
     "concurrently": "^10.0.3",
     "typescript": "~5.9.2"

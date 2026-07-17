@@ -1,66 +1,101 @@
-import React, { useState, useEffect } from 'react';
-import { StyleSheet, View, ViewStyle } from 'react-native';
+import React, { useEffect, useRef } from 'react';
+import { StyleSheet, View, Animated, Easing, ViewStyle } from 'react-native';
 import { theme } from '../theme';
 
 interface CustomSpinnerProps {
   size?: number;
   activeColor?: string;
   inactiveColor?: string;
-  speed?: number;
+  speed?: number; // duration of one rotation in ms
   style?: ViewStyle;
 }
 
-const DOTS_CONFIG = [
-  { left: 22, top: 0, rotate: '0deg' },         // Top
-  { left: 31.07, top: 5.62, rotate: '-135deg' }, // Top-Right
-  { left: 36, top: 22, rotate: '-90deg' },      // Right
-  { left: 31.07, top: 31.07, rotate: '-45deg' }, // Bottom-Right
-  { left: 22, top: 36, rotate: '0deg' },        // Bottom
-  { left: 5.62, top: 31.07, rotate: '-135deg' }, // Bottom-Left
-  { left: 0, top: 22, rotate: '-90deg' },       // Left
-  { left: 5.62, top: 5.62, rotate: '-45deg' },   // Top-Left
-];
+const getTranslucentColor = (color: string, opacity: number): string => {
+  if (color.startsWith('#')) {
+    let cleanHex = color.replace('#', '');
+    if (cleanHex.length === 3) {
+      cleanHex = cleanHex.split('').map(char => char + char).join('');
+    }
+    const r = parseInt(cleanHex.substring(0, 2), 16);
+    const g = parseInt(cleanHex.substring(2, 4), 16);
+    const b = parseInt(cleanHex.substring(4, 6), 16);
+    return `rgba(${r}, ${g}, ${b}, ${opacity})`;
+  }
+  if (color.startsWith('rgb')) {
+    return color.replace('rgb(', 'rgba(').replace(')', `, ${opacity})`).replace('rgbaa', 'rgba');
+  }
+  return color;
+};
 
 export default function CustomSpinner({
   size = 48,
-  activeColor = theme.primary,
-  inactiveColor = 'rgba(255, 255, 255, 0.2)',
-  speed = 100,
+  activeColor = '#9747FF', // Default to Figma's purple gradient color
+  inactiveColor = '#2D2D2D', // Default to Figma's dark track color
+  speed = 1000,
   style,
 }: CustomSpinnerProps) {
-  const [activeIndex, setActiveIndex] = useState(0);
+  const rotation = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
-    const interval = setInterval(() => {
-      setActiveIndex((prev) => (prev + 1) % 8);
-    }, speed);
-    return () => clearInterval(interval);
-  }, [speed]);
+    const startAnimation = () => {
+      rotation.setValue(0);
+      Animated.loop(
+        Animated.timing(rotation, {
+          toValue: 1,
+          duration: speed,
+          easing: Easing.linear,
+          useNativeDriver: true,
+        })
+      ).start();
+    };
+
+    startAnimation();
+  }, [rotation, speed]);
+
+  const rotateInterpolate = rotation.interpolate({
+    inputRange: [0, 1],
+    outputRange: ['0deg', '360deg'],
+  });
 
   const scale = size / 48;
+  const strokeWidth = 8 * scale;
+
+  const color50 = getTranslucentColor(activeColor, 0.50);
+  const color15 = getTranslucentColor(activeColor, 0.15);
 
   return (
     <View style={[styles.container, { width: size, height: size }, style]}>
-      {DOTS_CONFIG.map((dot, index) => {
-        const isActive = index === activeIndex;
-        return (
-          <View
-            key={index}
-            style={[
-              styles.bar,
-              {
-                width: 4 * scale,
-                height: 12 * scale,
-                borderRadius: 9999,
-                left: dot.left * scale,
-                top: dot.top * scale,
-                backgroundColor: isActive ? activeColor : inactiveColor,
-                transform: [{ rotate: dot.rotate }],
-              },
-            ]}
-          />
-        );
-      })}
+      {/* Background Track (Ellipse 26) */}
+      <View
+        style={[
+          styles.circle,
+          {
+            width: size,
+            height: size,
+            borderRadius: size / 2,
+            borderWidth: strokeWidth,
+            borderColor: inactiveColor,
+          },
+        ]}
+      />
+      {/* Rotating Gradient Arc (Ellipse 27) */}
+      <Animated.View
+        style={[
+          styles.circle,
+          styles.overlay,
+          {
+            width: size,
+            height: size,
+            borderRadius: size / 2,
+            borderWidth: strokeWidth,
+            borderColor: 'transparent',
+            borderTopColor: activeColor,
+            borderRightColor: color50,
+            borderBottomColor: color15,
+            transform: [{ rotate: rotateInterpolate }],
+          },
+        ]}
+      />
     </View>
   );
 }
@@ -68,8 +103,13 @@ export default function CustomSpinner({
 const styles = StyleSheet.create({
   container: {
     position: 'relative',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
-  bar: {
+  circle: {
     position: 'absolute',
+  },
+  overlay: {
+    backgroundColor: 'transparent',
   },
 });

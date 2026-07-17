@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { StyleSheet, View, Text, Pressable, ViewStyle, TextStyle, Platform } from 'react-native';
+import { StyleSheet, View, Text, Pressable, ViewStyle, TextStyle, Platform, Modal, TextInput } from 'react-native';
 import { FontAwesome5 } from '@expo/vector-icons';
 import { theme } from '../theme';
 import { usePlayerContext } from '../context/PlayerContext';
@@ -31,7 +31,10 @@ export default function TopHeader({
     return tvFocusSection === 'menu' && tvFocusIdx === idx;
   };
 
-  const { handleChromecast, currentStream } = usePlayerContext();
+  const { handleChromecast, currentStream, playCustomStream } = usePlayerContext();
+  const [isCustomPlayerModalOpen, setIsCustomPlayerModalOpen] = useState(false);
+  const [customUrl, setCustomUrl] = useState('');
+  const [customTitle, setCustomTitle] = useState('');
 
   const onCastPress = () => {
     handleChromecast((msg: string) => {
@@ -41,6 +44,17 @@ export default function TopHeader({
         alert(msg);
       }
     });
+  };
+
+  const handlePlayCustom = () => {
+    if (!customUrl.trim()) {
+      alert("Por favor, insira uma URL válida.");
+      return;
+    }
+    playCustomStream(customUrl.trim(), customTitle.trim() || undefined);
+    setIsCustomPlayerModalOpen(false);
+    setCustomUrl('');
+    setCustomTitle('');
   };
 
   // Generic Button Component for Navigation Items
@@ -132,10 +146,10 @@ export default function TopHeader({
       { height: (isMobile ? 64 : 76) * scale },
       Platform.OS === 'web' && styles.webGlassHeader as any
     ]}>
-      {/* Brand Logo - Prime Video Style */}
+      {/* Brand Logo - Sky+ Style */}
       <View style={styles.headerLogoContainer}>
         <Text style={[styles.headerLogoText, { fontSize: 20 * scale }]}>
-          W3Labs <Text style={{ color: theme.primary, fontWeight: '300' }}>TV</Text>
+          W3Labs <Text style={{ color: theme.live, fontWeight: '900' }}>TV+</Text>
         </Text>
       </View>
 
@@ -151,6 +165,15 @@ export default function TopHeader({
 
       {/* Right Side Widgets (Time Badge and Profile) */}
       <View style={styles.headerRight}>
+        {/* Custom Player Trigger Button */}
+        <Pressable 
+          onPress={() => setIsCustomPlayerModalOpen(true)} 
+          style={[styles.timeBadge, { paddingHorizontal: 10, borderColor: 'rgba(255,255,255,0.15)' }]}
+        >
+          <FontAwesome5 name="link" size={11 * scale} color={theme.yellow} style={{ marginRight: 6 * scale }} />
+          <Text style={[styles.headerTime, { fontSize: 13 * scale, color: '#fff' }]}>Link</Text>
+        </Pressable>
+
         {currentStream && (
           <Pressable onPress={onCastPress} style={[styles.timeBadge, { paddingHorizontal: 10 }]}>
             <FontAwesome5 name="chromecast" size={14 * scale} color={theme.primary} />
@@ -172,6 +195,57 @@ export default function TopHeader({
           <View style={styles.onlineIndicator} />
         </View>
       </View>
+      {/* Custom Player Modal */}
+      <Modal
+        visible={isCustomPlayerModalOpen}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setIsCustomPlayerModalOpen(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { width: 420 * scale }]}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Player Personalizado</Text>
+              <Pressable onPress={() => setIsCustomPlayerModalOpen(false)} style={styles.closeBtn}>
+                <FontAwesome5 name="times" size={16 * scale} color="#fff" />
+              </Pressable>
+            </View>
+
+            <Text style={styles.modalDescription}>
+              Cole o link de uma transmissão direta (m3u8, mp4) ou um link de embed para assistir no player do app.
+            </Text>
+
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>URL da Transmissão</Text>
+              <TextInput
+                style={styles.textInput}
+                placeholder="https://exemplo.com/canal.m3u8 ou embed..."
+                placeholderTextColor="rgba(255,255,255,0.3)"
+                value={customUrl}
+                onChangeText={setCustomUrl}
+                autoCapitalize="none"
+                autoCorrect={false}
+              />
+            </View>
+
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>Título (Opcional)</Text>
+              <TextInput
+                style={styles.textInput}
+                placeholder="Ex: Meu Canal HD"
+                placeholderTextColor="rgba(255,255,255,0.3)"
+                value={customTitle}
+                onChangeText={setCustomTitle}
+              />
+            </View>
+
+            <Pressable onPress={handlePlayCustom} style={styles.playButton}>
+              <FontAwesome5 name="play" size={11 * scale} color="#000" style={{ marginRight: 8 * scale }} />
+              <Text style={styles.playButtonText}>Iniciar Reprodução</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -197,6 +271,17 @@ interface Styles {
   profileAvatar: ViewStyle;
   avatarText: TextStyle;
   onlineIndicator: ViewStyle;
+  modalOverlay: ViewStyle;
+  modalContent: ViewStyle;
+  modalHeader: ViewStyle;
+  modalTitle: TextStyle;
+  modalDescription: TextStyle;
+  inputGroup: ViewStyle;
+  inputLabel: TextStyle;
+  textInput: TextStyle;
+  playButton: ViewStyle;
+  playButtonText: TextStyle;
+  closeBtn: ViewStyle;
 }
 
 const styles = StyleSheet.create<Styles>({
@@ -205,12 +290,12 @@ const styles = StyleSheet.create<Styles>({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 24,
-    backgroundColor: theme.bg,
+    backgroundColor: 'rgba(6, 7, 19, 0.45)',
     borderBottomWidth: 1,
     borderBottomColor: 'rgba(255, 255, 255, 0.08)',
   },
   webGlassHeader: {
-    backgroundColor: 'rgba(15, 15, 15, 0.95)',
+    backgroundColor: 'rgba(6, 7, 19, 0.85)',
     // @ts-ignore
     backdropFilter: 'blur(20px)',
     position: 'sticky' as any,
@@ -251,16 +336,16 @@ const styles = StyleSheet.create<Styles>({
     }),
   },
   navBtnActive: {
-    borderBottomColor: theme.text,
+    borderBottomColor: theme.primary,
   },
   navBtnHovered: {
-    borderBottomColor: 'rgba(255, 255, 255, 0.4)',
+    borderBottomColor: 'rgba(0, 240, 255, 0.4)',
   },
   navBtnFocused: {
     borderBottomColor: theme.yellow,
   },
   navBtnTVActive: {
-    borderBottomColor: theme.primary,
+    borderBottomColor: theme.live,
   },
   navBtnText: {
     color: theme.textMuted,
@@ -316,5 +401,73 @@ const styles = StyleSheet.create<Styles>({
     backgroundColor: '#10b981',
     borderWidth: 1.5,
     borderColor: theme.bg,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.85)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalContent: {
+    backgroundColor: '#161616',
+    borderRadius: 16,
+    borderWidth: 1.5,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
+    padding: 24,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  modalTitle: {
+    color: '#fff',
+    fontSize: 18,
+    fontWeight: '900',
+  },
+  modalDescription: {
+    color: theme.textMuted,
+    fontSize: 13,
+    lineHeight: 18,
+    marginBottom: 20,
+  },
+  inputGroup: {
+    marginBottom: 16,
+  },
+  inputLabel: {
+    color: '#fff',
+    fontSize: 11,
+    fontWeight: '800',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginBottom: 8,
+  },
+  textInput: {
+    backgroundColor: 'rgba(255, 255, 255, 0.04)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
+    borderRadius: 8,
+    color: '#fff',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 13,
+  },
+  playButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: theme.primary,
+    borderRadius: 8,
+    paddingVertical: 12,
+    marginTop: 8,
+  },
+  playButtonText: {
+    color: '#000',
+    fontWeight: '900',
+    fontSize: 14,
+  },
+  closeBtn: {
+    padding: 4,
   },
 });

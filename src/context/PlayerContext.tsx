@@ -9,10 +9,66 @@ interface PlayerContextData {
   setCurrentStream: (stream: CurrentStream | null) => void;
   setActiveStreamChannel: (channel: Channel | null) => void;
   playStream: (channel: Channel, showToast?: (msg: string) => void) => void;
+  playCustomStream: (url: string, title?: string) => void;
   handleChromecast: (showToast: (msg: string) => void) => Promise<void>;
 }
 
 const PlayerContext = createContext<PlayerContextData>({} as PlayerContextData);
+
+const resolveStreamUrl = async (embedUrl: string): Promise<string> => {
+  const cleanUrl = embedUrl.toLowerCase().split('?')[0];
+  if (cleanUrl.endsWith('.m3u8') || cleanUrl.endsWith('.mp4')) {
+    return embedUrl;
+  }
+
+  // Step 1: Fetch embed page html
+  const response = await fetch(embedUrl, {
+    headers: {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+    }
+  });
+  const html = await response.text();
+
+  // Extract iframe src
+  const iframeMatch = html.match(/<iframe[^>]+src="([^"]+)"/i);
+  if (!iframeMatch) throw new Error('No iframe found');
+  const iframeUrl = iframeMatch[1];
+
+  // Step 2: Fetch iframe player html
+  const iframeResponse = await fetch(iframeUrl, {
+    headers: {
+      'Referer': embedUrl,
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+    }
+  });
+  const iframeHtml = await iframeResponse.text();
+
+  // Step 3: Extract stream url
+  let streamUrl = '';
+  const arrayMatch = iframeHtml.match(/streamUrls\s*=\s*\[(.*?)\]/i);
+  if (arrayMatch) {
+    const urlsStr = arrayMatch[1];
+    const urlMatches = urlsStr.match(/"([^"]+)"/g);
+    if (urlMatches && urlMatches.length > 0) {
+      streamUrl = urlMatches[0].replace(/"/g, '').replace(/\\/g, '');
+    }
+  }
+
+  if (!streamUrl) {
+    const singleMatch = iframeHtml.match(/(?:const|var|let)\s+streamUrl\s*=\s*"([^"]+)"/i) || 
+                        iframeHtml.match(/file:\s*"([^"]+)"/i) ||
+                        iframeHtml.match(/source:\s*"([^"]+)"/i);
+    if (singleMatch) {
+      streamUrl = singleMatch[1].replace(/\\/g, '');
+    }
+  }
+
+  if (!streamUrl) {
+    throw new Error('No stream URL extracted');
+  }
+
+  return streamUrl;
+};
 
 export const PlayerProvider = ({ children }: { children: ReactNode }) => {
   const [currentStream, setCurrentStream] = useState<CurrentStream | null>(null);
@@ -34,22 +90,78 @@ export const PlayerProvider = ({ children }: { children: ReactNode }) => {
     }
   }, [allChannels, currentStream]);
 
-  const playStream = (channel: Channel, showToast?: (msg: string) => void) => {
+  const playStream = async (channel: Channel, showToast?: (msg: string) => void) => {
     const embedUrl = channel.embed_url || channel.streamUrl;
     if (!embedUrl) {
       if (showToast) showToast("Sinal indisponível.");
       return;
     }
-    const mappedStream = {
-      title: channel.name,
-      category: channel.category || 'TV',
-      logoUrl: channel.logo_url || channel.logo,
-      embedUrl: embedUrl,
-      provider: channel.provider || 'w3labs',
+
+    if (showToast) showToast(`Carregando canal...`);
+
+    try {
+      let resolvedUrl = embedUrl;
+      const isEmbeddable = 
+        embedUrl.includes('rdcanais') || 
+        embedUrl.includes('reidoscanais') || 
+        embedUrl.includes('playerembed') || 
+        embedUrl.includes('pescaplay');
+
+      if (isEmbeddable) {
+        if (Platform.OS === 'web') {
+          const response = await fetch(`http://localhost:3000/api/resolve?url=${encodeURIComponent(embedUrl)}`);
+          const data = await response.json();
+          if (data.streamUrl) {
+            resolvedUrl = data.streamUrl;
+          } else {
+            throw new Error(data.error || 'Failed to resolve via proxy');
+          }
+        } else {
+          resolvedUrl = await resolveStreamUrl(embedUrl);
+        }
+      }
+
+      const mappedStream = {
+        title: channel.name,
+        category: channel.category || 'TV',
+        logoUrl: channel.logo_url || channel.logo,
+        embedUrl: resolvedUrl,
+        provider: channel.provider || 'w3labs',
+      };
+      setCurrentStream(mappedStream);
+      setActiveStreamChannel(channel);
+      updateRecentChannels(channel);
+    } catch (e) {
+      console.warn("Direct stream extraction failed, falling back to iframe:", e);
+      const mappedStream = {
+        title: channel.name,
+        category: channel.category || 'TV',
+        logoUrl: channel.logo_url || channel.logo,
+        embedUrl: embedUrl,
+        provider: channel.provider || 'w3labs',
+      };
+      setCurrentStream(mappedStream);
+      setActiveStreamChannel(channel);
+      updateRecentChannels(channel);
+    }
+  };
+
+  const playCustomStream = (url: string, title: string = 'Canal Personalizado') => {
+    const customChannel: Channel = {
+      name: title,
+      category: 'Personalizado',
+      embed_url: url,
+      streamUrl: url,
+      provider: 'w3labs',
+    };
+    const mappedStream: CurrentStream = {
+      title: title,
+      category: 'Personalizado',
+      embedUrl: url,
+      provider: 'w3labs',
     };
     setCurrentStream(mappedStream);
-    setActiveStreamChannel(channel);
-    updateRecentChannels(channel);
+    setActiveStreamChannel(customChannel);
   };
 
   const handleChromecast = async (showToast: (msg: string) => void) => {
@@ -127,6 +239,7 @@ export const PlayerProvider = ({ children }: { children: ReactNode }) => {
         setCurrentStream,
         setActiveStreamChannel,
         playStream,
+        playCustomStream,
         handleChromecast,
       }}
     >

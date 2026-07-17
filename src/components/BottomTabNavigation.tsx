@@ -26,16 +26,16 @@ export default function BottomTabNavigation({
     }, [active]);
 
     return (
-      <Pressable 
-        onPress={() => setActiveTab(tab)} 
+      <Pressable
+        onPress={() => setActiveTab(tab)}
         style={styles.bottomNavBtn}
       >
         <Animated.View style={{ transform: [{ scale: scaleAnim }], alignItems: 'center', justifyContent: 'center' }}>
-          <FontAwesome5 
-            name={icon} 
-            size={16} 
-            color={active ? theme.text : theme.textMuted} 
-            solid={active && tab === 'favorites'} 
+          <FontAwesome5
+            name={icon}
+            size={16}
+            color={active ? theme.text : theme.textMuted}
+            solid={active && tab === 'favorites'}
           />
         </Animated.View>
         <Text style={[styles.bottomNavText, active && { color: '#fff' }]}>{label}</Text>
