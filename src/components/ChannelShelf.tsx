@@ -1,5 +1,5 @@
 import React, { useEffect, useRef } from 'react';
-import { StyleSheet, View, Text, FlatList, ViewStyle, TextStyle } from 'react-native';
+import { StyleSheet, View, Text, FlatList } from 'react-native';
 import { theme } from '../theme';
 import { Channel } from '../types';
 import ChannelCard from './ChannelCard';
@@ -17,89 +17,43 @@ interface ChannelShelfProps {
   tvFocusChannelIdx?: number;
 }
 
-export default function ChannelShelf({
-  title,
-  channels,
-  isMobile,
-  scale,
-  favoriteNames,
-  playStream,
-  shelfRowIdx = 0,
-  tvFocusSection,
-  tvFocusShelfIdx,
-  tvFocusChannelIdx,
-}: ChannelShelfProps) {
+export default function ChannelShelf({ title, channels, isMobile, scale, favoriteNames, playStream, shelfRowIdx = 0, tvFocusSection, tvFocusShelfIdx, tvFocusChannelIdx }: ChannelShelfProps) {
   const listRef = useRef<FlatList>(null);
 
-  // Auto-scroll shelf to keep focused item visible
   useEffect(() => {
-    if (
-      tvFocusSection === 'shelves' &&
-      tvFocusShelfIdx === shelfRowIdx &&
-      tvFocusChannelIdx !== undefined &&
-      listRef.current
-    ) {
-      try {
-        listRef.current.scrollToIndex({
-          index: tvFocusChannelIdx,
-          animated: true,
-          viewPosition: 0.2, // Center-left alignment
-        });
-      } catch (e) {
-        // Safe catch for initial/async load scrolling
-      }
+    if (tvFocusSection === 'shelves' && tvFocusShelfIdx === shelfRowIdx && tvFocusChannelIdx !== undefined) {
+      requestAnimationFrame(() => { try { listRef.current?.scrollToIndex({ index: tvFocusChannelIdx, animated: true, viewPosition: 0.18 }); } catch {} });
     }
   }, [tvFocusSection, tvFocusShelfIdx, tvFocusChannelIdx, shelfRowIdx]);
 
-  if (channels.length === 0) return null;
+  if (!channels.length) return null;
+  const cardWidth = (isMobile ? 148 : 210) * scale;
 
   return (
-    <View style={[styles.shelfContainer, { marginVertical: 12 * scale }]}>
-      <Text style={[styles.shelfTitle, { fontSize: 16 * scale }]}>{title}</Text>
+    <View style={[styles.container, { marginTop: 18 * scale }]}>
+      <View style={styles.headingRow}>
+        <View style={styles.headingAccent} />
+        <Text style={[styles.title, { fontSize: Math.max(14, 16 * scale) }]}>{title}</Text>
+        <Text style={[styles.count, { fontSize: Math.max(10, 11 * scale) }]}>{channels.length} canais</Text>
+      </View>
       <FlatList
-        ref={listRef}
-        data={channels}
-        keyExtractor={(item, index) => `${item.name}-${index}`}
+        ref={listRef} data={channels} horizontal showsHorizontalScrollIndicator={false}
+        keyExtractor={(item, index) => item.name + '-' + index}
+        contentContainerStyle={{ paddingLeft: 20 * scale, paddingRight: 12 * scale }}
         renderItem={({ item, index }) => (
-          <ChannelCard
-            item={item}
-            isMobile={isMobile}
-            scale={scale}
-            favoriteNames={favoriteNames}
-            playStream={playStream}
-            isFocused={
-              tvFocusSection === 'shelves' &&
-              tvFocusShelfIdx === shelfRowIdx &&
-              tvFocusChannelIdx === index
-            }
-          />
+          <ChannelCard item={item} isMobile={isMobile} scale={scale} favoriteNames={favoriteNames} playStream={playStream}
+            isFocused={tvFocusSection === 'shelves' && tvFocusShelfIdx === shelfRowIdx && tvFocusChannelIdx === index} />
         )}
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={{ paddingLeft: 24 * scale, paddingRight: 8 * scale }}
-        getItemLayout={(data, index) => {
-          const cardWidth = (isMobile ? 140 : 210) * scale + 16 * scale;
-          return { length: cardWidth, offset: cardWidth * index, index };
-        }}
+        getItemLayout={(_, index) => ({ length: cardWidth + 16 * scale, offset: (cardWidth + 16 * scale) * index, index })}
       />
     </View>
   );
 }
 
-interface Styles {
-  shelfContainer: ViewStyle;
-  shelfTitle: TextStyle;
-}
-
-const styles = StyleSheet.create<Styles>({
-  shelfContainer: {
-    paddingLeft: 0,
-  },
-  shelfTitle: {
-    color: '#fff',
-    fontWeight: '800',
-    marginLeft: 24,
-    marginBottom: 12,
-    letterSpacing: 0.5,
-  },
+const styles = StyleSheet.create({
+  container: { width: '100%' },
+  headingRow: { minHeight: 28, paddingHorizontal: 20, flexDirection: 'row', alignItems: 'center', gap: 8 },
+  headingAccent: { width: 4, height: 18, borderRadius: 4, backgroundColor: theme.primary },
+  title: { color: theme.text, fontWeight: '900', letterSpacing: 0.2, flexShrink: 1 },
+  count: { color: theme.textMuted, fontWeight: '700', marginLeft: 'auto' },
 });
