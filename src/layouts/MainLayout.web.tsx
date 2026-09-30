@@ -1,244 +1,128 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { View, StyleSheet, Animated, Text, useWindowDimensions, Pressable } from 'react-native';
 import { XStack } from 'tamagui';
 import { FontAwesome5 } from '@expo/vector-icons';
-
 import { theme } from '../theme';
 import { useAppContext } from '../context/AppContext';
 import { usePlayerContext } from '../context/PlayerContext';
 import { useTVNavigation } from '../hooks/useTVNavigation';
-
 import TopHeader from '../components/TopHeader';
 import BottomTabNavigation from '../components/BottomTabNavigation';
 import CinematicPlayer from '../components/CinematicPlayer';
 import ChannelSidebar from '../components/ChannelSidebar';
 import TVPlayerShelf from '../components/TVPlayerShelf';
-
 import HomeScreen from '../screens/HomeScreen';
 import FavoritesScreen from '../screens/FavoritesScreen';
 import SearchScreen from '../screens/SearchScreen';
 import { Channel } from '../types';
 
 export default function MainLayoutWeb() {
-  const { width } = useWindowDimensions();
-  const isMobileSize = width < 768;
-  const is4K = width >= 2560;
+  const { width, height } = useWindowDimensions();
+  const isPhone = width < 600;
+  const isTablet = width >= 600 && width < 1100;
+  const isDesktop = width >= 1100;
+  const isLargeTV = width >= 1800;
+  const [isTVMode, setIsTVMode] = useState(false);
+  const scale = isLargeTV ? Math.min(1.55, width / 1700) : isTVMode ? 1.18 : isPhone ? 0.92 : 1;
+  const numColumns = isPhone ? 2 : isTablet ? 3 : Math.max(4, Math.min(8, Math.floor(width / 230)));
 
-  const [isTVMode, setIsTVMode] = useState<boolean>(false);
-  const scale = isTVMode ? (is4K ? 2.2 : 1.35) : (is4K ? 1.8 : 1);
-  const numColumns = Math.max(2, Math.floor(width / (220 * (isTVMode ? 1.25 : 1))));
-
-  const {
-    activeTab, setActiveTab, allChannels, toggleFavorite, favoriteNames,
-    recentChannels, selectedCategory, groupedChannels, favoriteChannels
-  } = useAppContext();
-
-  const {
-    currentStream, activeStreamChannel, setActiveStreamChannel, playStream
-  } = usePlayerContext();
-
-  const [time, setTime] = useState<string>('');
-  const toastAnim = useRef(new Animated.Value(150)).current;
-  const [toastMsg, setToastMsg] = useState<string>('');
+  const { activeTab, setActiveTab, allChannels, recentChannels, selectedCategory, groupedChannels, favoriteChannels } = useAppContext();
+  const { currentStream, activeStreamChannel, setActiveStreamChannel, playStream } = usePlayerContext();
+  const [time, setTime] = useState('');
+  const toastAnim = useRef(new Animated.Value(160)).current;
+  const [toastMsg, setToastMsg] = useState('');
 
   useEffect(() => {
-    const updateClock = () => {
-      const now = new Date();
-      setTime(now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false }));
-    };
-    updateClock();
-    const interval = setInterval(updateClock, 30000);
-    return () => clearInterval(interval);
+    const tick = () => setTime(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false }));
+    tick();
+    const id = setInterval(tick, 30000);
+    return () => clearInterval(id);
   }, []);
 
   const showToast = (msg: string) => {
     setToastMsg(msg);
     Animated.sequence([
-      Animated.spring(toastAnim, { toValue: 0, useNativeDriver: false, speed: 15 }),
-      Animated.delay(3000),
-      Animated.timing(toastAnim, { toValue: 150, duration: 300, useNativeDriver: false })
+      Animated.spring(toastAnim, { toValue: 0, useNativeDriver: true, speed: 18 }),
+      Animated.delay(2600),
+      Animated.timing(toastAnim, { toValue: 160, duration: 240, useNativeDriver: true }),
     ]).start();
   };
 
-  // Setup data for TV navigation hook
-  const tvShelves = React.useMemo(() => {
-    const list: { title: string; channels: Channel[] }[] = [];
-    if (recentChannels.length > 0) {
-      const filteredRecents = selectedCategory === 'all'
-        ? recentChannels
-        : recentChannels.filter(c => (c.category || 'Geral').toLowerCase() === selectedCategory);
-      if (filteredRecents.length > 0) {
-        list.push({ title: 'ASSISTIDOS RECENTEMENTE', channels: filteredRecents });
-      }
-    }
-    if (favoriteChannels.length > 0) {
-      list.push({ title: 'MEUS FAVORITOS', channels: favoriteChannels });
-    }
-    Object.keys(groupedChannels).forEach(category => {
-      list.push({ title: category.toUpperCase(), channels: groupedChannels[category] });
-    });
-    return list;
-  }, [recentChannels, favoriteChannels, groupedChannels, selectedCategory]);
+  const shelves = useMemo(() => {
+    const result: { title: string; channels: Channel[] }[] = [];
+    if (recentChannels.length) result.push({ title: 'Continuar assistindo', channels: recentChannels });
+    if (favoriteChannels.length) result.push({ title: 'Meus favoritos', channels: favoriteChannels });
+    Object.keys(groupedChannels).forEach((category) => result.push({ title: category, channels: groupedChannels[category] }));
+    return result;
+  }, [recentChannels, favoriteChannels, groupedChannels]);
 
-  const {
-    focusSection,
-    menuIdx,
-    shelfIdx,
-    channelIdx,
-  } = useTVNavigation({
+  const navigation = useTVNavigation({
     enabled: isTVMode && !activeStreamChannel,
     activeTab,
-    shelves: tvShelves,
+    shelves,
     onSelectChannel: (channel) => playStream(channel, showToast),
-    onSelectMenu: (tab) => setActiveTab(tab),
-    onToggleTVMode: () => setIsTVMode(!isTVMode),
+    onSelectMenu: setActiveTab,
+    onToggleTVMode: () => setIsTVMode((v) => !v),
   });
 
-  // 100% VIEWPORT THEATER PLAYER OVERLAY MODE
   if (activeStreamChannel) {
     return (
-      <View style={[styles.fullscreenPlayerContainer, { flexDirection: 'row' }]}>
-        <View style={{ flex: 1, position: 'relative' }}>
+      <View style={styles.playerRoot}>
+        <View style={[styles.playerStage, isDesktop && styles.desktopPlayerStage]}>
           <CinematicPlayer
             currentStream={currentStream}
-            isMobile={false}
-            width={isTVMode ? width : (width > 1024 ? width * 0.75 : width)}
+            isMobile={isPhone}
+            width={isDesktop ? Math.min(width * 0.78, 1500) : width}
             scale={scale}
           />
-
-          <Pressable
-            onPress={() => setActiveStreamChannel(null)}
-            style={styles.floatingBackButton}
-          >
-            <FontAwesome5 name="arrow-left" size={14 * scale} color="#fff" />
-            <Text style={styles.floatingBackButtonText}>Voltar ao Catálogo</Text>
+          <Pressable onPress={() => setActiveStreamChannel(null)} style={styles.backButton}>
+            <FontAwesome5 name="arrow-left" size={14} color="#fff" />
+            <Text style={styles.backText}>{isPhone ? 'Voltar' : 'Voltar ao catálogo'}</Text>
           </Pressable>
-
           {isTVMode && (
-            <TVPlayerShelf
-              allChannels={allChannels}
-              currentStream={currentStream}
-              playStream={(c) => playStream(c, showToast)}
-              scale={scale}
-            />
+            <TVPlayerShelf allChannels={allChannels} currentStream={currentStream} playStream={(c) => playStream(c, showToast)} scale={scale} />
           )}
         </View>
-
-        {!isTVMode && width > 1024 && (
-          <View style={{ width: '25%', minWidth: 300, backgroundColor: theme.surfaceMuted }}>
-            <ChannelSidebar
-              allChannels={allChannels}
-              currentStream={currentStream}
-              playStream={(c) => playStream(c, showToast)}
-              scale={scale}
-              isMobile={false}
-            />
+        {isDesktop && !isTVMode && (
+          <View style={styles.sidebar}>
+            <ChannelSidebar allChannels={allChannels} currentStream={currentStream} playStream={(c) => playStream(c, showToast)} scale={scale} isMobile={false} />
           </View>
         )}
       </View>
     );
   }
 
-  const renderActiveTab = () => {
-    switch (activeTab) {
-      case 'home':
-        return (
-          <HomeScreen
-            isMobileSize={isMobileSize}
-            scale={scale}
-            isTVMode={isTVMode}
-            focusSection={focusSection}
-            shelfIdx={shelfIdx}
-            channelIdx={channelIdx}
-          />
-        );
-      case 'favorites':
-        return (
-          <FavoritesScreen
-            isMobileSize={isMobileSize}
-            scale={scale}
-            isTVMode={isTVMode}
-            numColumns={numColumns}
-            focusSection={focusSection}
-            channelIdx={channelIdx}
-          />
-        );
-      case 'search':
-        return (
-          <SearchScreen
-            isMobileSize={isMobileSize}
-            scale={scale}
-            isTVMode={isTVMode}
-            numColumns={numColumns}
-            focusSection={focusSection}
-            channelIdx={channelIdx}
-          />
-        );
-      default:
-        return null;
-    }
+  const renderScreen = () => {
+    if (activeTab === 'favorites') return <FavoritesScreen isMobileSize={isPhone} scale={scale} isTVMode={isTVMode} numColumns={numColumns} focusSection={navigation.focusSection} channelIdx={navigation.channelIdx} />;
+    if (activeTab === 'search') return <SearchScreen isMobileSize={isPhone} scale={scale} isTVMode={isTVMode} numColumns={numColumns} focusSection={navigation.focusSection} channelIdx={navigation.channelIdx} />;
+    return <HomeScreen isMobileSize={isPhone} scale={scale} isTVMode={isTVMode} focusSection={navigation.focusSection} shelfIdx={navigation.shelfIdx} channelIdx={navigation.channelIdx} />;
   };
 
   return (
-    <View style={[styles.webContainer, { width: '100%', minHeight: '100%' }]}>
+    <View style={styles.root}>
       <TopHeader
-        isMobile={isMobileSize}
+        isMobile={isPhone}
         scale={scale}
         time={time}
         activeTab={activeTab}
         setActiveTab={setActiveTab}
         isTVMode={isTVMode}
-        onToggleTVMode={() => setIsTVMode(!isTVMode)}
-        tvFocusSection={isTVMode ? focusSection : undefined}
-        tvFocusIdx={isTVMode ? menuIdx : undefined}
+        onToggleTVMode={() => setIsTVMode((v) => !v)}
+        tvFocusSection={isTVMode ? navigation.focusSection : undefined}
+        tvFocusIdx={isTVMode ? navigation.menuIdx : undefined}
       />
-
-      <View style={[styles.mainLayout, { width: '100%' }]}>
-        {renderActiveTab()}
-      </View>
-
-      {isMobileSize && (
-        <BottomTabNavigation
-          activeTab={activeTab}
-          setActiveTab={setActiveTab}
-        />
-      )}
-
+      <View style={styles.content}>{renderScreen()}</View>
+      {isPhone && <BottomTabNavigation activeTab={activeTab} setActiveTab={setActiveTab} />}
       {isTVMode && (
-        <View style={styles.tvGuideBanner}>
-          <FontAwesome5 name="info-circle" size={13 * scale} color={theme.w3labs} style={{ marginRight: 8 }} />
-          <Text style={[styles.tvGuideText, { fontSize: 12 * scale }]}>
-            MODO SMART TV: Navegue usando as setas do teclado/controle. Enter para OK. Backspace para o menu.
-          </Text>
+        <View style={[styles.tvGuide, { paddingVertical: 7 * scale }]}>
+          <FontAwesome5 name="gamepad" size={12 * scale} color={theme.primary} />
+          <Text style={[styles.tvGuideText, { fontSize: 11 * scale }]}>Use as setas para navegar • Enter para selecionar • Backspace para voltar</Text>
         </View>
       )}
-
-      <Animated.View
-        style={[
-          {
-            position: 'absolute',
-            alignSelf: 'center',
-            bottom: isTVMode ? 60 * scale : (isMobileSize ? 80 * scale : 40 * scale),
-            zIndex: 9999,
-            boxShadow: '0px 8px 24px rgba(0, 99, 229, 0.22)',
-          } as any,
-          {
-            transform: [{ translateY: toastAnim }],
-          }
-        ]}
-      >
-        <XStack
-          alignItems="center"
-          gap="$3"
-          backgroundColor="$surfaceMuted"
-          borderWidth={1.5}
-          borderColor="$primary"
-          paddingHorizontal={24 * scale}
-          paddingVertical={14 * scale}
-          borderRadius={16 * scale}
-        >
-          <FontAwesome5 name="exclamation-circle" size={16 * scale} color={theme.live} />
-          <Text style={[styles.toastText, { fontSize: 14 * scale }]}>{toastMsg}</Text>
+      <Animated.View style={[styles.toast, { transform: [{ translateY: toastAnim }], bottom: isPhone ? 82 : 24 }]}>
+        <XStack alignItems="center" gap="$2" backgroundColor="$surfaceMuted" borderWidth={1} borderColor="$primary" paddingHorizontal={16} paddingVertical={10} borderRadius={14}>
+          <FontAwesome5 name="info-circle" size={14} color={theme.primary} />
+          <Text style={styles.toastText}>{toastMsg}</Text>
         </XStack>
       </Animated.View>
     </View>
@@ -246,62 +130,16 @@ export default function MainLayoutWeb() {
 }
 
 const styles = StyleSheet.create({
-  webContainer: {
-    flex: 1,
-    height: '100%',
-    backgroundColor: theme.bg,
-  },
-  mainLayout: {
-    flex: 1,
-    backgroundColor: theme.bg,
-  },
-  toastText: {
-    color: '#fff',
-    fontWeight: '700',
-  },
-  tvGuideBanner: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    backgroundColor: 'rgba(6, 7, 19, 0.96)',
-    borderTopWidth: 1.5,
-    borderColor: theme.primary,
-    paddingVertical: 8,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    zIndex: 99999,
-  },
-  tvGuideText: {
-    color: theme.text,
-    fontWeight: '700',
-  },
-  fullscreenPlayerContainer: {
-    flex: 1,
-    height: '100%',
-    width: '100%',
-    backgroundColor: '#000',
-    position: 'relative',
-  },
-  floatingBackButton: {
-    position: 'absolute',
-    top: 24,
-    left: 24,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    backgroundColor: 'rgba(6, 7, 19, 0.75)',
-    borderWidth: 1.5,
-    borderColor: theme.border,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 24,
-    zIndex: 999999,
-  },
-  floatingBackButtonText: {
-    color: '#fff',
-    fontWeight: '800',
-    fontSize: 13,
-  },
+  root: { flex: 1, minHeight: '100vh' as any, backgroundColor: theme.bg },
+  content: { flex: 1, minHeight: 0, backgroundColor: theme.bg },
+  playerRoot: { flex: 1, minHeight: '100vh' as any, flexDirection: 'row', backgroundColor: '#000' },
+  playerStage: { flex: 1, position: 'relative', minHeight: 0, backgroundColor: '#000' },
+  desktopPlayerStage: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  sidebar: { width: 320, maxWidth: '28%', backgroundColor: theme.surfaceMuted, borderLeftWidth: 1, borderLeftColor: theme.border },
+  backButton: { position: 'absolute', top: 18, left: 18, flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: 'rgba(5,7,13,0.82)', borderWidth: 1, borderColor: theme.border, paddingHorizontal: 14, paddingVertical: 9, borderRadius: 22, zIndex: 9999 },
+  backText: { color: '#fff', fontWeight: '800', fontSize: 12 },
+  tvGuide: { position: 'absolute', left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(5,7,13,0.96)', borderTopWidth: 1, borderTopColor: theme.border, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, zIndex: 9998 },
+  tvGuideText: { color: theme.textMuted, fontWeight: '700' },
+  toast: { position: 'absolute', alignSelf: 'center', zIndex: 99999 },
+  toastText: { color: theme.text, fontWeight: '800', fontSize: 12 },
 });
