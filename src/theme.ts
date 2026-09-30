@@ -1,37 +1,28 @@
 export const theme = {
-  // Sky+ Deep Dark Mode (Indigo-Black & Translucent Glass)
-  bg: '#060713',          // Fundo escuro profundo estilo Sky+
-  surface: 'rgba(18, 22, 43, 0.55)',     // Superfície elevada acrílica translúcida
-  surfaceMuted: 'rgba(11, 14, 28, 0.75)',// Variação de superfície acrílica mais escura
-  surfaceHover: 'rgba(255, 255, 255, 0.08)',// Elemento em foco / hover
-  primary: '#00f0ff',     // Ciano vibrante (Sky+ Primary)
-  live: '#ec4899',        // Rosa/Magenta vibrante para indicar ao vivo
-  orange: '#ff9900',      // Amarelo/Laranja p/ avaliações
-  yellow: '#eab308',      // Amarelo destaque
-  text: '#f8fafc',        // Texto principal claro limpo
-  textMuted: '#94a3b8',   // Texto secundário cinza-azulado
-  border: 'rgba(255, 255, 255, 0.08)', // Borda de vidro sutil
-  borderHover: 'rgba(0, 240, 255, 0.35)', // Borda com brilho ciano ativo
-  
-  // Skeleton / Shimmer Colors (Acrílico)
-  skeletonBg: '#12162b',
-  skeletonShine: '#202747',
-
-  // Paleta de Streaming e Acentos Sky+
-  netflix: '#e50914',
-  disney: '#0063e5',
-  prime: '#00a8e1',
-  paramount: '#0064ff',
-  w3labs: '#00f0ff',
-  
-  // Cores de Acento Estilo Degradê Sky+
-  skyGradientStart: '#ec4899', // Pink
-  skyGradientMid: '#8b5cf6',   // Purple
-  skyGradientEnd: '#3b82f6',   // Blue
-
-  // Auxiliares
-  glass: 'rgba(6, 7, 19, 0.85)', // Glass translúcido acrílico
-  black40: 'rgba(0, 0, 0, 0.4)',
-  white10: 'rgba(255, 255, 255, 0.1)',
-  white5: 'rgba(255, 255, 255, 0.05)',
+  bg: '#05070D',
+  surface: 'rgba(18, 24, 38, 0.78)',
+  surfaceMuted: 'rgba(10, 14, 24, 0.94)',
+  surfaceHover: 'rgba(255,255,255,0.07)',
+  primary: '#38BDF8',
+  live: '#F43F5E',
+  orange: '#F59E0B',
+  yellow: '#FBBF24',
+  text: '#F8FAFC',
+  textMuted: '#94A3B8',
+  border: 'rgba(255,255,255,0.09)',
+  borderHover: 'rgba(56,189,248,0.48)',
+  skeletonBg: '#111827',
+  skeletonShine: '#1F2937',
+  netflix: '#E50914',
+  disney: '#0063E5',
+  prime: '#00A8E1',
+  paramount: '#0064FF',
+  w3labs: '#38BDF8',
+  skyGradientStart: '#38BDF8',
+  skyGradientMid: '#6366F1',
+  skyGradientEnd: '#A855F7',
+  glass: 'rgba(5,7,13,0.82)',
+  black40: 'rgba(0,0,0,0.4)',
+  white10: 'rgba(255,255,255,0.1)',
+  white5: 'rgba(255,255,255,0.05)',
 };
