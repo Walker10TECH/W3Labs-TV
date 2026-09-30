@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { StyleSheet, View, Text, Pressable, ViewStyle, TextStyle, Platform, Modal, TextInput } from 'react-native';
+import { StyleSheet, View, Text, Pressable, Platform, Modal, TextInput, useWindowDimensions } from 'react-native';
 import { FontAwesome5 } from '@expo/vector-icons';
 import { theme } from '../theme';
 import { usePlayerContext } from '../context/PlayerContext';
@@ -16,458 +16,139 @@ interface TopHeaderProps {
   tvFocusIdx?: number;
 }
 
-export default function TopHeader({
-  isMobile,
-  scale,
-  time,
-  activeTab,
-  setActiveTab,
-  isTVMode = false,
-  onToggleTVMode,
-  tvFocusSection,
-  tvFocusIdx,
-}: TopHeaderProps) {
-  const isTVFocused = (idx: number) => {
-    return tvFocusSection === 'menu' && tvFocusIdx === idx;
-  };
-
+export default function TopHeader({ isMobile, scale, time, activeTab, setActiveTab, isTVMode = false, onToggleTVMode, tvFocusSection, tvFocusIdx }: TopHeaderProps) {
+  const { width } = useWindowDimensions();
+  const compact = width < 420;
   const { handleChromecast, currentStream, playCustomStream } = usePlayerContext();
-  const [isCustomPlayerModalOpen, setIsCustomPlayerModalOpen] = useState(false);
-  const [customUrl, setCustomUrl] = useState('');
-  const [customTitle, setCustomTitle] = useState('');
+  const [modal, setModal] = useState(false);
+  const [url, setUrl] = useState('');
+  const [title, setTitle] = useState('');
 
-  const onCastPress = () => {
-    handleChromecast((msg: string) => {
-      if (Platform.OS === 'web') {
-        window.alert(msg);
-      } else {
-        alert(msg);
-      }
-    });
-  };
-
-  const handlePlayCustom = () => {
-    if (!customUrl.trim()) {
-      alert("Por favor, insira uma URL válida.");
+  const submitCustom = () => {
+    if (!url.trim()) {
+      if (Platform.OS === 'web') window.alert('Informe uma URL de transmissão.');
+      else alert('Informe uma URL de transmissão.');
       return;
     }
-    playCustomStream(customUrl.trim(), customTitle.trim() || undefined);
-    setIsCustomPlayerModalOpen(false);
-    setCustomUrl('');
-    setCustomTitle('');
+    playCustomStream(url.trim(), title.trim() || undefined);
+    setUrl('');
+    setTitle('');
+    setModal(false);
   };
 
-  // Generic Button Component for Navigation Items
-  const NavItem = ({ 
-    tab, 
-    label, 
-    icon, 
-    tvIndex 
-  }: { 
-    tab: 'home' | 'favorites' | 'search'; 
-    label: string; 
-    icon: string;
-    tvIndex: number;
-  }) => {
-    const [hovered, setHovered] = useState(false);
-    const active = activeTab === tab;
-    const focused = isTVFocused(tvIndex);
-
-    return (
-      <Pressable
-        onPress={() => setActiveTab(tab)}
-        onHoverIn={() => setHovered(true)}
-        onHoverOut={() => setHovered(false)}
-        style={[
-          styles.navBtn,
-          active && styles.navBtnActive,
-          focused && styles.navBtnFocused,
-          hovered && styles.navBtnHovered,
-        ]}
-      >
-        <FontAwesome5 
-          name={icon} 
-          size={12 * scale} 
-          color={active ? '#fff' : (focused ? theme.yellow : (hovered ? '#fff' : theme.textMuted))} 
-          style={{ marginRight: 6 * scale }} 
-        />
-        <Text style={[
-          styles.navBtnText, 
-          active && styles.navBtnTextActive,
-          focused && { color: theme.yellow },
-          hovered && { color: '#fff' }
-        ]}>
-          {label}
-        </Text>
-      </Pressable>
-    );
-  };
-
-  // TV Mode toggle component
-  const TVModeButton = () => {
-    if (!onToggleTVMode) return null;
-    const [hovered, setHovered] = useState(false);
-    const active = isTVMode;
-    const focused = isTVFocused(3);
-
-    return (
-      <Pressable 
-        onPress={onToggleTVMode}
-        onHoverIn={() => setHovered(true)}
-        onHoverOut={() => setHovered(false)}
-        style={[
-          styles.navBtn, 
-          active && styles.navBtnTVActive,
-          focused && styles.navBtnFocused,
-          hovered && styles.navBtnHovered,
-        ]}
-      >
-        <FontAwesome5 
-          name="tv" 
-          size={11 * scale} 
-          color={active ? '#fff' : (focused ? theme.yellow : (hovered ? '#fff' : theme.textMuted))} 
-          style={{ marginRight: 6 * scale }} 
-        />
-        <Text style={[
-          styles.navBtnText, 
-          active && styles.navBtnTextActive,
-          focused && { color: theme.yellow },
-          hovered && { color: '#fff' }
-        ]}>
-          Modo TV
-        </Text>
-      </Pressable>
-    );
-  };
+  const cast = () => handleChromecast((msg) => Platform.OS === 'web' ? window.alert(msg) : alert(msg));
+  const nav = [
+    ['home', 'Início', 'home', 0],
+    ['favorites', 'Favoritos', 'heart', 1],
+    ['search', 'Pesquisar', 'search', 2],
+  ] as const;
 
   return (
-    <View style={[
-      styles.headerContainer, 
-      { height: (isMobile ? 64 : 76) * scale },
-      Platform.OS === 'web' && styles.webGlassHeader as any
-    ]}>
-      {/* Brand Logo - Sky+ Style */}
-      <View style={styles.headerLogoContainer}>
-        <Text style={[styles.headerLogoText, { fontSize: 20 * scale }]}>
-          W3Labs <Text style={{ color: theme.live, fontWeight: '900' }}>TV+</Text>
-        </Text>
-      </View>
-
-      {/* Central Navigation Menu (Web Browsers or TV Screen sizes only) */}
-      {(!isMobile || isTVMode) && (
-        <View style={styles.headerNav}>
-          <NavItem tab="home" label="Início" icon="home" tvIndex={0} />
-          <NavItem tab="favorites" label="Favoritos" icon="heart" tvIndex={1} />
-          <NavItem tab="search" label="Pesquisar" icon="search" tvIndex={2} />
-          <TVModeButton />
-        </View>
-      )}
-
-      {/* Right Side Widgets (Time Badge and Profile) */}
-      <View style={styles.headerRight}>
-        {/* Custom Player Trigger Button */}
-        <Pressable 
-          onPress={() => setIsCustomPlayerModalOpen(true)} 
-          style={[styles.timeBadge, { paddingHorizontal: 10, borderColor: 'rgba(255,255,255,0.15)' }]}
-        >
-          <FontAwesome5 name="link" size={11 * scale} color={theme.yellow} style={{ marginRight: 6 * scale }} />
-          <Text style={[styles.headerTime, { fontSize: 13 * scale, color: '#fff' }]}>Link</Text>
-        </Pressable>
-
-        {currentStream && (
-          <Pressable onPress={onCastPress} style={[styles.timeBadge, { paddingHorizontal: 10 }]}>
-            <FontAwesome5 name="chromecast" size={14 * scale} color={theme.primary} />
-          </Pressable>
-        )}
-        {time ? (
-          <View style={styles.timeBadge}>
-            <FontAwesome5 name="clock" size={12 * scale} color={theme.yellow} style={{ marginRight: 6 * scale }} />
-            <Text style={[styles.headerTime, { fontSize: 13 * scale }]}>
-              {time}
-            </Text>
+    <>
+      <View style={[styles.header, { minHeight: isMobile ? 62 : isTVMode ? 82 : 72 }]}>
+        <View style={styles.brand}>
+          <View style={styles.brandMark}><FontAwesome5 name="play" size={10 * scale} color="#061018" solid /></View>
+          <View>
+            <Text style={[styles.brandName, { fontSize: Math.max(17, 20 * scale) }]}>W3Labs <Text style={styles.brandAccent}>TV+</Text></Text>
+            {!compact && <Text style={styles.brandSub}>ENTRETENIMENTO AO VIVO</Text>}
           </View>
-        ) : null}
-        
-        <View style={[styles.profileAvatarWrapper, { width: 34 * scale, height: 34 * scale }]}>
-          <View style={[styles.profileAvatar, { width: 34 * scale, height: 34 * scale }]}>
-            <Text style={[styles.avatarText, { fontSize: 11 * scale }]}>W3</Text>
-          </View>
-          <View style={styles.onlineIndicator} />
         </View>
-      </View>
-      {/* Custom Player Modal */}
-      <Modal
-        visible={isCustomPlayerModalOpen}
-        transparent={true}
-        animationType="fade"
-        onRequestClose={() => setIsCustomPlayerModalOpen(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, { width: 420 * scale }]}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Player Personalizado</Text>
-              <Pressable onPress={() => setIsCustomPlayerModalOpen(false)} style={styles.closeBtn}>
-                <FontAwesome5 name="times" size={16 * scale} color="#fff" />
+
+        {(!isMobile || isTVMode) && (
+          <View style={styles.nav}>
+            {nav.map(([tab, label, icon, idx]) => {
+              const active = activeTab === tab;
+              const focused = tvFocusSection === 'menu' && tvFocusIdx === idx;
+              return (
+                <Pressable key={tab} onPress={() => setActiveTab(tab)} style={[styles.navItem, active && styles.navActive, focused && styles.navFocused]}>
+                  <FontAwesome5 name={icon} size={13 * scale} color={active ? '#fff' : focused ? theme.yellow : theme.textMuted} />
+                  <Text style={[styles.navText, active && styles.navTextActive, focused && { color: theme.yellow }]}>{label}</Text>
+                </Pressable>
+              );
+            })}
+            {onToggleTVMode && (
+              <Pressable onPress={onToggleTVMode} style={[styles.navItem, isTVMode && styles.tvActive]}>
+                <FontAwesome5 name="tv" size={13 * scale} color={isTVMode ? '#fff' : theme.textMuted} />
+                <Text style={[styles.navText, isTVMode && styles.navTextActive]}>Modo TV</Text>
               </Pressable>
+            )}
+          </View>
+        )}
+
+        <View style={styles.actions}>
+          <Pressable onPress={() => setModal(true)} style={styles.actionButton}>
+            <FontAwesome5 name="link" size={12} color={theme.yellow} />
+            {!compact && <Text style={styles.actionText}>Link</Text>}
+          </Pressable>
+          {currentStream && !compact && (
+            <Pressable onPress={cast} style={styles.actionButton}>
+              <FontAwesome5 name="chromecast" size={14} color={theme.primary} />
+            </Pressable>
+          )}
+          {!compact && !!time && (
+            <View style={styles.clock}>
+              <FontAwesome5 name="clock" size={11} color={theme.textMuted} />
+              <Text style={styles.clockText}>{time}</Text>
             </View>
+          )}
+          <View style={styles.avatar}><Text style={styles.avatarText}>W3</Text><View style={styles.online} /></View>
+        </View>
+      </View>
 
-            <Text style={styles.modalDescription}>
-              Cole o link de uma transmissão direta (m3u8, mp4) ou um link de embed para assistir no player do app.
-            </Text>
-
-            <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>URL da Transmissão</Text>
-              <TextInput
-                style={styles.textInput}
-                placeholder="https://exemplo.com/canal.m3u8 ou embed..."
-                placeholderTextColor="rgba(255,255,255,0.3)"
-                value={customUrl}
-                onChangeText={setCustomUrl}
-                autoCapitalize="none"
-                autoCorrect={false}
-              />
+      <Modal visible={modal} transparent animationType="fade" onRequestClose={() => setModal(false)}>
+        <View style={styles.overlay}>
+          <View style={[styles.modal, { width: Math.min(width - 32, 480) }]}>
+            <View style={styles.modalHeader}>
+              <View>
+                <Text style={styles.modalTitle}>Player personalizado</Text>
+                <Text style={styles.modalSub}>Reproduza uma transmissão própria.</Text>
+              </View>
+              <Pressable onPress={() => setModal(false)}><FontAwesome5 name="times" size={18} color={theme.textMuted} /></Pressable>
             </View>
-
-            <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>Título (Opcional)</Text>
-              <TextInput
-                style={styles.textInput}
-                placeholder="Ex: Meu Canal HD"
-                placeholderTextColor="rgba(255,255,255,0.3)"
-                value={customTitle}
-                onChangeText={setCustomTitle}
-              />
-            </View>
-
-            <Pressable onPress={handlePlayCustom} style={styles.playButton}>
-              <FontAwesome5 name="play" size={11 * scale} color="#000" style={{ marginRight: 8 * scale }} />
-              <Text style={styles.playButtonText}>Iniciar Reprodução</Text>
+            <Text style={styles.label}>URL da transmissão</Text>
+            <TextInput value={url} onChangeText={setUrl} autoCapitalize="none" autoCorrect={false} placeholder="https://exemplo.com/canal.m3u8" placeholderTextColor="#64748B" style={styles.input} />
+            <Text style={styles.label}>Título opcional</Text>
+            <TextInput value={title} onChangeText={setTitle} placeholder="Meu canal" placeholderTextColor="#64748B" style={styles.input} />
+            <Pressable onPress={submitCustom} style={styles.playButton}>
+              <FontAwesome5 name="play" size={11} color="#061018" solid />
+              <Text style={styles.playButtonText}>Iniciar reprodução</Text>
             </Pressable>
           </View>
         </View>
       </Modal>
-    </View>
+    </>
   );
 }
 
-interface Styles {
-  headerContainer: ViewStyle;
-  webGlassHeader: ViewStyle;
-  headerLogoContainer: ViewStyle;
-  logoIconCircle: ViewStyle;
-  headerLogoText: TextStyle;
-  headerNav: ViewStyle;
-  navBtn: ViewStyle;
-  navBtnActive: ViewStyle;
-  navBtnHovered: ViewStyle;
-  navBtnFocused: ViewStyle;
-  navBtnTVActive: ViewStyle;
-  navBtnText: TextStyle;
-  navBtnTextActive: TextStyle;
-  headerRight: ViewStyle;
-  timeBadge: ViewStyle;
-  headerTime: TextStyle;
-  profileAvatarWrapper: ViewStyle;
-  profileAvatar: ViewStyle;
-  avatarText: TextStyle;
-  onlineIndicator: ViewStyle;
-  modalOverlay: ViewStyle;
-  modalContent: ViewStyle;
-  modalHeader: ViewStyle;
-  modalTitle: TextStyle;
-  modalDescription: TextStyle;
-  inputGroup: ViewStyle;
-  inputLabel: TextStyle;
-  textInput: TextStyle;
-  playButton: ViewStyle;
-  playButtonText: TextStyle;
-  closeBtn: ViewStyle;
-}
-
-const styles = StyleSheet.create<Styles>({
-  headerContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 24,
-    backgroundColor: 'rgba(6, 7, 19, 0.45)',
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255, 255, 255, 0.08)',
-  },
-  webGlassHeader: {
-    backgroundColor: 'rgba(6, 7, 19, 0.85)',
-    // @ts-ignore
-    backdropFilter: 'blur(20px)',
-    position: 'sticky' as any,
-    top: 0,
-    zIndex: 1000,
-  },
-  headerLogoContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-  },
-  logoIconCircle: {
-    display: 'none',
-  },
-  headerLogoText: {
-    color: '#fff',
-    fontWeight: '800',
-    letterSpacing: -0.5,
-  },
-  headerNav: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 20,
-  },
-  navBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 4,
-    paddingVertical: 12,
-    backgroundColor: 'transparent',
-    borderBottomWidth: 2,
-    borderBottomColor: 'transparent',
-    ...Platform.select({
-      web: {
-        transition: 'all 0.2s ease-in-out',
-      } as any,
-      default: {},
-    }),
-  },
-  navBtnActive: {
-    borderBottomColor: theme.primary,
-  },
-  navBtnHovered: {
-    borderBottomColor: 'rgba(0, 240, 255, 0.4)',
-  },
-  navBtnFocused: {
-    borderBottomColor: theme.yellow,
-  },
-  navBtnTVActive: {
-    borderBottomColor: theme.live,
-  },
-  navBtnText: {
-    color: theme.textMuted,
-    fontWeight: '700',
-    fontSize: 14,
-  },
-  navBtnTextActive: {
-    color: '#fff',
-  },
-  headerRight: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 16,
-  },
-  timeBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(255, 255, 255, 0.04)',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.08)',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 16,
-  },
-  headerTime: {
-    color: theme.text,
-    fontWeight: '700',
-  },
-  profileAvatarWrapper: {
-    position: 'relative',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  profileAvatar: {
-    borderRadius: 999,
-    backgroundColor: theme.primary,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1.5,
-    borderColor: 'rgba(255, 255, 255, 0.2)',
-  },
-  avatarText: {
-    color: '#fff',
-    fontWeight: '900',
-  },
-  onlineIndicator: {
-    position: 'absolute',
-    bottom: 0,
-    right: 0,
-    width: 9,
-    height: 9,
-    borderRadius: 99,
-    backgroundColor: '#10b981',
-    borderWidth: 1.5,
-    borderColor: theme.bg,
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.85)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  modalContent: {
-    backgroundColor: '#161616',
-    borderRadius: 16,
-    borderWidth: 1.5,
-    borderColor: 'rgba(255, 255, 255, 0.1)',
-    padding: 24,
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  modalTitle: {
-    color: '#fff',
-    fontSize: 18,
-    fontWeight: '900',
-  },
-  modalDescription: {
-    color: theme.textMuted,
-    fontSize: 13,
-    lineHeight: 18,
-    marginBottom: 20,
-  },
-  inputGroup: {
-    marginBottom: 16,
-  },
-  inputLabel: {
-    color: '#fff',
-    fontSize: 11,
-    fontWeight: '800',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-    marginBottom: 8,
-  },
-  textInput: {
-    backgroundColor: 'rgba(255, 255, 255, 0.04)',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.1)',
-    borderRadius: 8,
-    color: '#fff',
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    fontSize: 13,
-  },
-  playButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: theme.primary,
-    borderRadius: 8,
-    paddingVertical: 12,
-    marginTop: 8,
-  },
-  playButtonText: {
-    color: '#000',
-    fontWeight: '900',
-    fontSize: 14,
-  },
-  closeBtn: {
-    padding: 4,
-  },
+const styles = StyleSheet.create({
+  header: { width: '100%', paddingHorizontal: 18, paddingVertical: 10, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: 'rgba(5,7,13,0.94)', borderBottomWidth: 1, borderBottomColor: theme.border, zIndex: 1000 },
+  brand: { flexDirection: 'row', alignItems: 'center', gap: 9, minWidth: 150 },
+  brandMark: { width: 30, height: 30, borderRadius: 10, backgroundColor: theme.primary, alignItems: 'center', justifyContent: 'center' },
+  brandName: { color: '#fff', fontWeight: '900', letterSpacing: -0.5 },
+  brandAccent: { color: theme.primary },
+  brandSub: { color: theme.textMuted, fontSize: 7.5, fontWeight: '800', letterSpacing: 1.2, marginTop: 1 },
+  nav: { flex: 1, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 8, marginHorizontal: 18 },
+  navItem: { minHeight: 38, paddingHorizontal: 13, borderRadius: 11, flexDirection: 'row', alignItems: 'center', gap: 7, borderWidth: 1, borderColor: 'transparent' },
+  navActive: { backgroundColor: 'rgba(56,189,248,0.12)', borderColor: 'rgba(56,189,248,0.22)' },
+  navFocused: { backgroundColor: 'rgba(251,191,36,0.10)', borderColor: theme.yellow },
+  tvActive: { backgroundColor: 'rgba(244,63,94,0.12)', borderColor: 'rgba(244,63,94,0.35)' },
+  navText: { color: theme.textMuted, fontSize: 12, fontWeight: '800' },
+  navTextActive: { color: '#fff' },
+  actions: { flexDirection: 'row', alignItems: 'center', gap: 7 },
+  actionButton: { minWidth: 36, height: 36, paddingHorizontal: 10, borderRadius: 11, backgroundColor: 'rgba(255,255,255,0.045)', borderWidth: 1, borderColor: theme.border, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 },
+  actionText: { color: theme.text, fontSize: 11, fontWeight: '800' },
+  clock: { height: 36, paddingHorizontal: 10, borderRadius: 11, backgroundColor: 'rgba(255,255,255,0.035)', flexDirection: 'row', alignItems: 'center', gap: 6 },
+  clockText: { color: theme.textMuted, fontSize: 11, fontWeight: '800' },
+  avatar: { width: 34, height: 34, borderRadius: 17, backgroundColor: theme.primary, alignItems: 'center', justifyContent: 'center', position: 'relative' },
+  avatarText: { color: '#061018', fontWeight: '900', fontSize: 10 },
+  online: { position: 'absolute', right: -1, bottom: -1, width: 9, height: 9, borderRadius: 9, backgroundColor: '#22C55E', borderWidth: 2, borderColor: theme.bg },
+  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.78)', alignItems: 'center', justifyContent: 'center', padding: 16 },
+  modal: { backgroundColor: '#0B1120', borderRadius: 20, borderWidth: 1, borderColor: theme.border, padding: 22 },
+  modalHeader: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 20 },
+  modalTitle: { color: '#fff', fontSize: 19, fontWeight: '900' },
+  modalSub: { color: theme.textMuted, fontSize: 11, marginTop: 3 },
+  label: { color: theme.text, fontSize: 10, fontWeight: '900', textTransform: 'uppercase', letterSpacing: 0.7, marginBottom: 7, marginTop: 4 },
+  input: { height: 44, borderRadius: 10, backgroundColor: 'rgba(255,255,255,0.045)', borderWidth: 1, borderColor: theme.border, color: '#fff', paddingHorizontal: 12, marginBottom: 14 },
+  playButton: { height: 46, borderRadius: 12, backgroundColor: theme.primary, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 4 },
+  playButtonText: { color: '#061018', fontWeight: '900', fontSize: 13 },
 });
