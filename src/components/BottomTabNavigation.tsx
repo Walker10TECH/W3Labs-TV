@@ -1,5 +1,5 @@
-import React, { useRef, useEffect } from 'react';
-import { StyleSheet, View, Text, Pressable, ViewStyle, TextStyle, Platform, Animated } from 'react-native';
+import React from 'react';
+import { StyleSheet, View, Text, Pressable, Platform } from 'react-native';
 import { FontAwesome5 } from '@expo/vector-icons';
 import { theme } from '../theme';
 
@@ -8,85 +8,39 @@ interface BottomTabNavigationProps {
   setActiveTab: (tab: 'home' | 'favorites' | 'search') => void;
 }
 
-export default function BottomTabNavigation({
-  activeTab,
-  setActiveTab,
-}: BottomTabNavigationProps) {
-
-  const TabButton = ({ tab, label, icon }: { tab: 'home' | 'favorites' | 'search'; label: string; icon: string }) => {
-    const active = activeTab === tab;
-    const scaleAnim = useRef(new Animated.Value(1)).current;
-
-    useEffect(() => {
-      Animated.spring(scaleAnim, {
-        toValue: active ? 1.15 : 1,
-        useNativeDriver: true,
-        friction: 5,
-      }).start();
-    }, [active]);
-
-    return (
-      <Pressable
-        onPress={() => setActiveTab(tab)}
-        style={styles.bottomNavBtn}
-      >
-        <Animated.View style={{ transform: [{ scale: scaleAnim }], alignItems: 'center', justifyContent: 'center' }}>
-          <FontAwesome5
-            name={icon}
-            size={16}
-            color={active ? theme.text : theme.textMuted}
-            solid={active && tab === 'favorites'}
-          />
-        </Animated.View>
-        <Text style={[styles.bottomNavText, active && { color: '#fff' }]}>{label}</Text>
-      </Pressable>
-    );
-  };
+export default function BottomTabNavigation({ activeTab, setActiveTab }: BottomTabNavigationProps) {
+  const items = [
+    { tab: 'home' as const, label: 'Início', icon: 'home' },
+    { tab: 'favorites' as const, label: 'Favoritos', icon: 'heart' },
+    { tab: 'search' as const, label: 'Pesquisar', icon: 'search' },
+  ];
 
   return (
-    <View style={[styles.bottomNavContainer, Platform.OS === 'web' && styles.webGlassNav as any]}>
-      <TabButton tab="home" label="Início" icon="home" />
-      <TabButton tab="favorites" label="Favoritos" icon="heart" />
-      <TabButton tab="search" label="Busca" icon="search" />
+    <View style={[styles.container, Platform.OS === 'web' && styles.webContainer as any]}>
+      {items.map((item) => {
+        const active = activeTab === item.tab;
+        return (
+          <Pressable key={item.tab} onPress={() => setActiveTab(item.tab)} accessibilityRole="button" accessibilityLabel={item.label}
+            style={({ pressed }) => [styles.button, active && styles.activeButton, pressed && styles.pressed]}>
+            <View style={[styles.iconWrap, active && styles.activeIconWrap]}>
+              <FontAwesome5 name={item.icon} size={16} color={active ? '#061018' : theme.textMuted} solid={active && item.tab === 'favorites'} />
+            </View>
+            <Text style={[styles.label, active && styles.activeLabel]}>{item.label}</Text>
+          </Pressable>
+        );
+      })}
     </View>
   );
 }
 
-interface Styles {
-  bottomNavContainer: ViewStyle;
-  webGlassNav: ViewStyle;
-  bottomNavBtn: ViewStyle;
-  bottomNavText: TextStyle;
-}
-
-const styles = StyleSheet.create<Styles>({
-  bottomNavContainer: {
-    flexDirection: 'row',
-    height: 60,
-    backgroundColor: theme.bg,
-    borderTopWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.08)',
-    justifyContent: 'space-around',
-    alignItems: 'center',
-    position: 'relative',
-  },
-  webGlassNav: {
-    backgroundColor: 'rgba(15, 15, 15, 0.95)',
-    // @ts-ignore
-    backdropFilter: 'blur(20px)',
-  },
-  bottomNavBtn: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    flex: 1,
-    height: '100%',
-    paddingTop: 6,
-  },
-  bottomNavText: {
-    color: theme.textMuted,
-    fontSize: 10,
-    fontWeight: '700',
-    marginTop: 4,
-    letterSpacing: 0.2,
-  },
+const styles = StyleSheet.create({
+  container: { height: 68, paddingHorizontal: 12, paddingTop: 7, paddingBottom: 7, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-around', backgroundColor: theme.surfaceMuted, borderTopWidth: 1, borderColor: theme.border },
+  webContainer: { backgroundColor: 'rgba(5,7,13,0.92)', backdropFilter: 'blur(18px)' } as any,
+  button: { flex: 1, maxWidth: 150, height: 54, alignItems: 'center', justifyContent: 'center', borderRadius: 14 },
+  activeButton: { backgroundColor: 'rgba(56,189,248,0.12)' },
+  pressed: { opacity: 0.72 },
+  iconWrap: { width: 30, height: 26, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
+  activeIconWrap: { backgroundColor: theme.primary },
+  label: { color: theme.textMuted, fontSize: 10, fontWeight: '700', marginTop: 3 },
+  activeLabel: { color: theme.text },
 });
